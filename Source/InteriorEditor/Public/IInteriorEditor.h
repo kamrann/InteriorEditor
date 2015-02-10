@@ -18,7 +18,7 @@ public:
 	*
 	* @return Returns singleton instance, loading the module on demand if needed
 	*/
-	static inline IModule& Get()
+	static inline IInteriorEditorModule& Get()
 	{
 		return FModuleManager::LoadModuleChecked< IInteriorEditorModule >("InteriorEditor");
 	}

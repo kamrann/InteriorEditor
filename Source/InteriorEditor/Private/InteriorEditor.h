@@ -8,7 +8,7 @@
 /*
 Module implementation
 */
-class FInteriorEditorModule: public IInteriorEditor
+class FInteriorEditorModule: public IInteriorEditorModule
 {
 public:
 

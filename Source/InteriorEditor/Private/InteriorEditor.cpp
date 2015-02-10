@@ -6,7 +6,9 @@
 
 void FInteriorEditorModule::StartupModule()
 {
-	UE_LOG(InteriorEditor, Log, TEXT("%s"), TEXT("InteriorEditor module loaded"));
+	UE_LOG(LogTemp, Log, TEXT("%s"), TEXT("InteriorEditor module startup"));
+
+	FEditorModeRegistry::Get().RegisterMode< >();
 }
 
 void FInteriorEditorModule::ShutdownModule()
