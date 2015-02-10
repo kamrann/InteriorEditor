@@ -1,0 +1,19 @@
+{
+	"FileVersion" : 3,
+	
+	"FriendlyName" : "Kantan Interior Editor",
+	"Version" : 1,
+	"VersionName" : "1.0",
+	"CreatedBy" : "Kantan Games",
+	"EngineVersion" : "4.7.0",
+	"CategoryPath" : "Editor",
+	"EnabledByDefault" : true,
+	
+	"Modules" :
+	[
+		{
+			"Name" : "InteriorEditor",
+			"Type" : "Editor"
+		}
+	]
+}
