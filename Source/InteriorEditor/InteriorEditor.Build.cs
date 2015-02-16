@@ -17,6 +17,7 @@ public class InteriorEditor : ModuleRules
 				"Slate",
 				"SlateCore",
                 "EditorStyle",
+                "PropertyEditor",
                 "InputCore",
 //				"RawMesh",
                 "UnrealEd",
