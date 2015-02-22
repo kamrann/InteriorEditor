@@ -337,7 +337,7 @@ void AInteriorGraphActor::PostInitializeComponents()
 
 	// TODO: Currently doing this here to ensure before BeginPlay of dependent actors.
 	// Eventually, probably want to call this externally.
-	BuildGraph(3);
+	BuildGraph(10);
 }
 
 void AInteriorGraphActor::AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector)
