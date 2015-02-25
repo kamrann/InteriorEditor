@@ -331,11 +331,12 @@ AInteriorConnectionActor* AInteriorGraphActor::CreateConnection(
 }
 
 
-void AInteriorGraphActor::PostInitializeComponents()
+void AInteriorGraphActor::PreInitializeComponents()
 {
-	Super::PostInitializeComponents();
+	Super::PreInitializeComponents();
 
 	// TODO: Currently doing this here to ensure before BeginPlay of dependent actors.
+	// !!! AND also before InitializeComponent() of all components of ALL actors.
 	// Eventually, probably want to call this externally.
 	BuildGraph(10);
 }
@@ -343,7 +344,5 @@ void AInteriorGraphActor::PostInitializeComponents()
 void AInteriorGraphActor::AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector)
 {
 	Super::AddReferencedObjects(InThis, Collector);
-
-	int uu = 0;
 }
 

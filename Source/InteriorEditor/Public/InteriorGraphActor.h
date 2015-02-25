@@ -123,7 +123,7 @@ private:
 
 public:
 	// Overrides
-	virtual void PostInitializeComponents() override;
+	virtual void PreInitializeComponents() override;
 
 	static void AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector);
 
