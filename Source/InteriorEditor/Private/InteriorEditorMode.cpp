@@ -5,6 +5,7 @@
 #include "InteriorGraphActor.h"
 #include "InteriorNodeActor.h"
 #include "InteriorGizmoActor.h"
+#include "InteriorEditorHitProxies.h"
 #include "InteriorEditorModeSettings.h"
 #include "SInteriorEditor.h"
 #include "Editor/UnrealEd/Public/Toolkits/ToolkitManager.h"
@@ -120,6 +121,16 @@ FVector FInteriorEditorMode::GetWidgetLocation() const
 */	{
 		return FEdMode::GetWidgetLocation();
 	}
+}
+
+bool FInteriorEditorMode::HandleClick(FEditorViewportClient* InViewport, HHitProxy* HitProxy, const FViewportClick& Click)
+{
+	if(HitProxy && HitProxy->IsA(HInteriorNodeFaceHitProxy::StaticGetType()))
+	{
+		return true;
+	}
+
+	return false;
 }
 
 bool FInteriorEditorMode::InputKey(

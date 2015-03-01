@@ -3,32 +3,8 @@
 #include "InteriorEditorPrivatePCH.h"
 #include "NodeRenderingComponent.h"
 #include "InteriorNodeActor.h"
+#include "InteriorEditorHitProxies.h"
 
-
-class HInteriorNodeFaceHitProxy: public HHitProxy
-{
-	DECLARE_HIT_PROXY( INTERIOREDITOR_API )
-
-	HInteriorNodeFaceHitProxy(AInteriorNodeActor* Nd, EAxisIndex Axis, EAxisDirection Dir):
-		Node(Nd), FaceAxis(Axis), FaceDir(Dir)
-	{
-
-	}
-
-	virtual void AddReferencedObjects(FReferenceCollector& Collector) override
-	{
-		Collector.AddReferencedObject(Node);
-	}
-
-	virtual EMouseCursor::Type GetMouseCursor()
-	{
-		return EMouseCursor::Crosshairs;
-	}
-
-	AInteriorNodeActor* Node;
-	EAxisIndex FaceAxis;
-	EAxisDirection FaceDir;
-};
 
 IMPLEMENT_HIT_PROXY(HInteriorNodeFaceHitProxy, HHitProxy)
 
@@ -134,7 +110,7 @@ void FNodeSceneProxy::GetDynamicMeshElements(const TArray<const FSceneView*>& Vi
 			{
 				const FSceneView* View = Views[ViewIndex];
 				FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);
-				bool bHitTesting = PDI->IsHitTesting();
+				bool bHitTesting = true;// PDI->IsHitTesting();
 
 				int OtherAxes[EAxisIndex::Count][2] = {
 					{ EAxisIndex::Y, EAxisIndex::Z },

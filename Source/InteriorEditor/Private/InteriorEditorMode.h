@@ -37,6 +37,8 @@ public:
 	virtual bool DisallowMouseDeltaTracking() const override;
 	virtual FVector GetWidgetLocation() const override;
 
+	virtual bool HandleClick(FEditorViewportClient* InViewport, HHitProxy* HitProxy, const FViewportClick& Click) override;
+
 	virtual bool InputKey(
 		FEditorViewportClient* ViewportClient,
 		FViewport* Viewport,
