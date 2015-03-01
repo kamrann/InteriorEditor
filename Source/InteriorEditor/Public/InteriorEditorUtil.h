@@ -19,6 +19,12 @@ enum EAxisIndex {
 	None = -1,
 };
 
+enum class EAxisDirection {
+	Positive = 1,
+	Negative = -1,
+	None = 0,
+};
+
 struct FAxisAlignedPlanarArea
 {
 	EAxisIndex FixedAxis;

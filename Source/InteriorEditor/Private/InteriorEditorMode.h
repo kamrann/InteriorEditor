@@ -62,12 +62,6 @@ protected:
 	typedef TArray< class AInteriorNodeActor* > FNodeList;
 	typedef TArray< float > FAxisValueList;
 
-	enum class EAxisDirection {
-		Positive = 1,
-		Negative = -1,
-		None = 0,
-	};
-
 	static inline float DirectionMultiplier(EAxisDirection direction)
 	{
 		return direction == EAxisDirection::Positive ? 1.f : -1.f;

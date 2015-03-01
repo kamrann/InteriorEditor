@@ -72,11 +72,11 @@ public:
 //	TSet< class AInteriorConnectionActor*, FConnKeyFuncs > Connections;
 
 public:
-	static const NodeIdType NullNode = 0;
+	static const NodeIdType NullNode = -1;
 
 	typedef TArray< NodeIdType > NodeIdList;
 
-	static const ConnectionIdType NullConnection = 0;
+	static const ConnectionIdType NullConnection = -1;
 
 	typedef TArray< ConnectionIdType > ConnectionIdList;
 
@@ -101,7 +101,7 @@ public:
 //	bool ToggleConnection(class AInteriorNodeActor* N1, class AInteriorNodeActor* N2);
 
 	void GatherNodes();
-	bool BuildGraph(int32 Subdivision = 1);
+	bool BuildGraph(int32 Subdivision = 1, int32 SubdivisionZ = 1);
 
 private:
 	class AInteriorConnectionActor* FindConnection(FConnectionKey const& Key) const;
@@ -121,6 +121,9 @@ private:
 			;
 	}
 
+	void RemoveHiddenNodes(TMap< NodeIdType, FNodeData >& BuildND, TMap< ConnectionIdType, FConnectionData >& BuildCD);
+	void PackNodeAndConnectionData(TMap< NodeIdType, FNodeData >& BuildND, TMap< ConnectionIdType, FConnectionData >& BuildCD);
+
 public:
 	// Overrides
 	virtual void PreInitializeComponents() override;
@@ -133,8 +136,8 @@ protected:
 
 #if INTERIOR_GRAPH_DEBUG_NAMES
 public:
-	TArray< FString > NodeNames;
-	TArray< FString > ConnNames;
+	TMap< NodeIdType, FString > NodeNames;
+	TMap< ConnectionIdType, FString > ConnNames;
 #endif
 };
 

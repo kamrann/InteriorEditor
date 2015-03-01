@@ -6,6 +6,9 @@
 #include "InteriorConnectionActor.h"
 #include "InteriorEditorUtil.h"
 #include "Engine/World.h"
+#include "VisibilityHelpers.h"
+
+#include <algorithm>
 
 
 struct TArrayPred
@@ -175,49 +178,142 @@ void AInteriorGraphActor::GatherNodes()
 	}
 }
 
-bool AInteriorGraphActor::BuildGraph(int32 Subdivision)
+void AInteriorGraphActor::RemoveHiddenNodes(TMap< NodeIdType, FNodeData >& BuildND, TMap< ConnectionIdType, FConnectionData >& BuildCD)
+{
+	for(auto It = BuildND.CreateIterator(); It; ++It)
+	{
+		auto& ND = It->Value;
+		auto Pos = ND.Center();
+		auto Hidden = UVisibilityHelpers::IsPointHidden(Pos, GetWorld(), ECollisionChannel::ECC_WorldStatic);
+
+		if(Hidden)
+		{
+			for(auto Out : ND.Outgoing)
+			{
+				BuildCD.Remove(Out);
+			}
+
+			It.RemoveCurrent();
+		}
+	}
+}
+
+void AInteriorGraphActor::PackNodeAndConnectionData(TMap< NodeIdType, FNodeData >& BuildND, TMap< ConnectionIdType, FConnectionData >& BuildCD)
+{
+	TMap< NodeIdType, NodeIdType > NodeCondense;
+	TMap< ConnectionIdType, ConnectionIdType > ConnCondense;
+
+	// Sort for debugging consistency
+	BuildND.KeySort([](NodeIdType A, NodeIdType B)
+	{
+		return A < B;
+	});
+	for(auto const& ND : BuildND)
+	{
+		NodeCondense.Add(ND.Key, NodeCondense.Num());
+	}
+
+	BuildCD.KeySort([](ConnectionIdType A, ConnectionIdType B)
+	{
+		return A < B;
+	});
+	for(auto const& CD : BuildCD)
+	{
+		ConnCondense.Add(CD.Key, ConnCondense.Num());
+	}
+
+	NodeData.Init(FNodeData{}, BuildND.Num());
+	for(auto& ND : BuildND)
+	{
+		for(auto& Out : ND.Value.Outgoing)
+		{
+			Out = ConnCondense[Out];
+		}
+
+		NodeData[NodeCondense[ND.Key]] = std::move(ND.Value);
+	}
+
+	ConnData.Reset();
+	for(auto& CD : BuildCD)
+	{
+		if(
+			!NodeCondense.Contains(CD.Value.Src) ||
+			!NodeCondense.Contains(CD.Value.Dest)
+			)
+		{
+			// Node has been removed, so omit this connection
+			continue;
+		}
+
+		CD.Value.Src = NodeCondense[CD.Value.Src];
+		CD.Value.Dest = NodeCondense[CD.Value.Dest];
+
+		ConnData.Add(std::move(CD.Value));
+	}
+
+	//
+	TMap< NodeIdType, FString > NewNodeNames;
+	for(auto& NdNm : NodeNames)
+	{
+		auto Ptr = NodeCondense.Find(NdNm.Key);
+		if(Ptr)
+		{
+			auto MappedKey = *Ptr;
+			FString Nm = FText::Format(
+				FText::FromString(TEXT("{0}:{1}-({2})")),
+				FText::FromString(NdNm.Value),
+				FText::AsNumber(MappedKey),
+				FText::AsNumber(NodeData[MappedKey].Outgoing.Num())
+				).ToString();
+			NewNodeNames.Add(MappedKey, Nm);
+		}
+	}
+	NodeNames = std::move(NewNodeNames);
+	//
+}
+
+bool AInteriorGraphActor::BuildGraph(int32 Subdivision, int32 SubdivisionZ)
 {
 	TMap< AInteriorNodeActor*, TArray< NodeIdType > > NodeMap;
-	NodeIdType NId = 0;
 
 	GatherNodes();
 
-	auto const SubnodesPerNode = Subdivision * Subdivision;	// temp x-y only
-	NodeData.Reset(Nodes.Num() * SubnodesPerNode);
-	NodeNames.Reset(NodeData.Num());
-	ConnData.Reset();
+	TMap< NodeIdType, FNodeData > BuildND;
+	TMap< ConnectionIdType, FConnectionData > BuildCD;
+	NodeIdType NId = 0;
+	ConnectionIdType CId = 0;
+
 	for(auto const& N : Nodes)
 	{
 		auto Pos = N->GetActorLocation();
-		auto SubExtent = N->Extent * FVector(1.f / Subdivision, 1.f / Subdivision, 1.f);
+		auto SubExtent = N->Extent * FVector(1.f / Subdivision, 1.f / Subdivision, 1.f / SubdivisionZ);
 		auto Base = Pos - N->Extent * 0.5f;
 
 		NodeMap.Add(N, TArray < NodeIdType > {});
 
-		auto IdxBase = NodeData.Num();
+		auto IdxBase = BuildND.Num();
 		for(int32 x = 0; x < Subdivision; ++x)
 		{
 			for(int32 y = 0; y < Subdivision; ++y)
 			{
-				auto NData = FNodeData{
-					Base + SubExtent * FVector(x, y, 0.f),
-					Base + SubExtent * FVector(x + 1, y + 1, 1.f)
-				};
-				NodeData.Add(NData);
+				for(int32 z = 0; z < SubdivisionZ; ++z)
+				{
+					auto NData = FNodeData{
+						Base + SubExtent * FVector(x, y, z),
+						Base + SubExtent * FVector(x + 1, y + 1, z + 1)
+					};
+					BuildND.Add(NId, NData);
+					NodeNames.Add(NId, N->GetName());
 
-				FString Nm = FText::Format(
-					FText::FromString(TEXT("{0}[{1}][{2}]")),
-					FText::FromString(N->GetName()),
-					FText::AsNumber(x),
-					FText::AsNumber(y)
-					).ToString();;
-				NodeNames.Add(Nm);
+					NodeMap[N].Add(NId);
 
-				NodeMap[N].Add(NId++);
+					++NId;
+				}
 			}
 		}
 
-		for(int32 Idx = IdxBase; Idx < NodeData.Num(); ++Idx)
+		/* TODO:
+		for(int32 Idx = IdxBase; Idx < BuildND.Num(); ++Idx)
 		{
 			auto Offset = Idx - IdxBase;
 			auto x = Offset / Subdivision;
@@ -228,33 +324,39 @@ bool AInteriorGraphActor::BuildGraph(int32 Subdivision)
 			{
 				auto DstOffset = (x - 1) * Subdivision + y;
 				auto DstIdx = IdxBase + DstOffset;
-				auto CnIdx = ConnData.Add(FConnectionData{ Idx, DstIdx });
-				NodeData[Idx].Outgoing.Add(CnIdx);
+				BuildCD.Add(CId, FConnectionData{ Idx, DstIdx });
+				BuildND[Idx].Outgoing.Add(CId);
+				++CId;
 			}
 			if(x != Subdivision - 1)
 			{
 				auto DstOffset = (x + 1) * Subdivision + y;
 				auto DstIdx = IdxBase + DstOffset;
-				auto CnIdx = ConnData.Add(FConnectionData{ Idx, DstIdx });
-				NodeData[Idx].Outgoing.Add(CnIdx);
+				BuildCD.Add(CId, FConnectionData{ Idx, DstIdx });
+				BuildND[Idx].Outgoing.Add(CId);
+				++CId;
 			}
 			if(y != 0)
 			{
 				auto DstOffset = x * Subdivision + (y - 1);
 				auto DstIdx = IdxBase + DstOffset;
-				auto CnIdx = ConnData.Add(FConnectionData{ Idx, DstIdx });
-				NodeData[Idx].Outgoing.Add(CnIdx);
+				BuildCD.Add(CId, FConnectionData{ Idx, DstIdx });
+				BuildND[Idx].Outgoing.Add(CId);
+				++CId;
 			}
 			if(y != Subdivision - 1)
 			{
 				auto DstOffset = x * Subdivision + (y + 1);
 				auto DstIdx = IdxBase + DstOffset;
-				auto CnIdx = ConnData.Add(FConnectionData{ Idx, DstIdx });
-				NodeData[Idx].Outgoing.Add(CnIdx);
+				BuildCD.Add(CId, FConnectionData{ Idx, DstIdx });
+				BuildND[Idx].Outgoing.Add(CId);
+				++CId;
 			}
 		}
+		*/
 	}
 
+/*	TODO:
 	// Now add pre-established connections
 	for(auto const& C : Connections)
 	{
@@ -265,42 +367,35 @@ bool AInteriorGraphActor::BuildGraph(int32 Subdivision)
 		for(auto N1 : PotentialN1)
 		{
 			FAxisAlignedPlanarArea Surf1;
-			if(TestForSharedSurface(NodeData[N1].Box(), Portal, 1.e-4f, &Surf1))
+			if(TestForSharedSurface(BuildND[N1].Box(), Portal, 1.e-4f, &Surf1))
 			{
 				for(auto N2 : PotentialN2)
 				{
 					FAxisAlignedPlanarArea Surf2;
-					if(TestForSharedSurface(NodeData[N2].Box(), Portal, 1.e-4f, &Surf2))
+					if(TestForSharedSurface(BuildND[N2].Box(), Portal, 1.e-4f, &Surf2))
 					{
 						if(TestForSharedSurface(
 							FBox{ Surf1.Min, Surf1.Max },
 							FBox{ Surf2.Min, Surf2.Max },
 							1.e-4f))
 						{
-							auto CnIdx = ConnData.Add(FConnectionData{ N1, N2, });
-							NodeData[N1].Outgoing.Add(CnIdx);
+							BuildCD.Add(CId, FConnectionData{ N1, N2, });
+							BuildND[N1].Outgoing.Add(CId);
+							++CId;
 
-							CnIdx = ConnData.Add(FConnectionData{ N2, N1 });
-							NodeData[N2].Outgoing.Add(CnIdx);
+							BuildCD.Add(CId, FConnectionData{ N2, N1 });
+							BuildND[N2].Outgoing.Add(CId);
+							++CId;
 						}
 					}
 				}
 			}
 		}
 	}
-	
-	//
-	for(NodeIdType NId = 0; NId < NodeData.Num(); ++NId)
-	{
-		FString Nm = FText::Format(
-			FText::FromString(TEXT("{0}-({1})")),
-			FText::FromString(NodeNames[NId]),
-			FText::AsNumber(NodeData[NId].Outgoing.Num())
-			).ToString();
-		NodeNames[NId] = Nm;
-	}
-	//
+	*/
 
+	RemoveHiddenNodes(BuildND, BuildCD);
+	PackNodeAndConnectionData(BuildND, BuildCD);
 	return true;
 }
 
@@ -338,7 +433,7 @@ void AInteriorGraphActor::PreInitializeComponents()
 	// TODO: Currently doing this here to ensure before BeginPlay of dependent actors.
 	// !!! AND also before InitializeComponent() of all components of ALL actors.
 	// Eventually, probably want to call this externally.
-	BuildGraph(10);
+	BuildGraph(10, 3);
 }
 
 void AInteriorGraphActor::AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector)

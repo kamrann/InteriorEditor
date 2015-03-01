@@ -5,6 +5,34 @@
 #include "InteriorNodeActor.h"
 
 
+class HInteriorNodeFaceHitProxy: public HHitProxy
+{
+	DECLARE_HIT_PROXY( INTERIOREDITOR_API )
+
+	HInteriorNodeFaceHitProxy(AInteriorNodeActor* Nd, EAxisIndex Axis, EAxisDirection Dir):
+		Node(Nd), FaceAxis(Axis), FaceDir(Dir)
+	{
+
+	}
+
+	virtual void AddReferencedObjects(FReferenceCollector& Collector) override
+	{
+		Collector.AddReferencedObject(Node);
+	}
+
+	virtual EMouseCursor::Type GetMouseCursor()
+	{
+		return EMouseCursor::Crosshairs;
+	}
+
+	AInteriorNodeActor* Node;
+	EAxisIndex FaceAxis;
+	EAxisDirection FaceDir;
+};
+
+IMPLEMENT_HIT_PROXY(HInteriorNodeFaceHitProxy, HHitProxy)
+
+
 enum class ENodeRenderMode {
 	Normal,
 	Selected,
@@ -21,12 +49,14 @@ public:
 
 	virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View) override;
 //	virtual void PreRenderView(const FSceneViewFamily * ViewFamily, const uint32 VisibilityMap, int32 FrameNumber) override;
+	virtual HHitProxy* CreateHitProxies(UPrimitiveComponent* Component, TArray<TRefCountPtr<HHitProxy> >& OutHitProxies) override;
 	virtual void GetDynamicMeshElements(const TArray<const FSceneView*>& Views, const FSceneViewFamily& ViewFamily, uint32 VisibilityMap, FMeshElementCollector& Collector) const override;
 
 protected:
 	static FColor ColorFromMode(ENodeRenderMode mode);
 
 protected:
+	AInteriorNodeActor* Node;
 	FVector Extent;
 };
 
@@ -36,11 +66,18 @@ FNodeSceneProxy::FNodeSceneProxy(
 	const FString& InViewFlagName,
 	FVector const& Extent
 	):
+//	FPrimitiveSceneProxy(InComponent)
 	FDebugRenderSceneProxy(InComponent)
 {
 	ViewFlagIndex = uint32(FEngineShowFlags::FindIndexByName(*InViewFlagName));
 	ViewFlagName = InViewFlagName;
 
+	this->Node = nullptr;
+	auto RenderComp = Cast< UNodeRenderingComponent >(InComponent);
+	if(RenderComp)
+	{
+		this->Node = Cast< AInteriorNodeActor >(RenderComp->GetOwner());
+	}
 	this->Extent = Extent;
 }
 
@@ -60,8 +97,8 @@ FPrimitiveViewRelevance FNodeSceneProxy::GetViewRelevance(const FSceneView* View
 {
 	FPrimitiveViewRelevance Result;
 	Result.bDrawRelevance =
-		View->Family->EngineShowFlags.GetSingleFlag(ViewFlagIndex)
-		&& IsShown(View)
+/*		View->Family->EngineShowFlags.GetSingleFlag(ViewFlagIndex)
+		&&*/ IsShown(View)
 		//&& SearchingActor->IsSelected()
 		;
 	Result.bDynamicRelevance = true;
@@ -77,9 +114,17 @@ void FNodeSceneProxy::PreRenderView(const FSceneViewFamily * ViewFamily, const u
 	FDebugRenderSceneProxy::PreRenderView(ViewFamily, VisibilityMap, FrameNumber);
 }
 */
+
+HHitProxy* FNodeSceneProxy::CreateHitProxies(UPrimitiveComponent* Component, TArray<TRefCountPtr<HHitProxy> >& OutHitProxies)
+{
+	// ????
+	return nullptr;
+}
+
 void FNodeSceneProxy::GetDynamicMeshElements(const TArray<const FSceneView*>& Views, const FSceneViewFamily& ViewFamily, uint32 VisibilityMap, FMeshElementCollector& Collector) const
 {
 	auto mode = IsSelected() ? ENodeRenderMode::Selected : ENodeRenderMode::Normal;	// todo: if more modes???
+	auto Center = GetActorPosition();
 	
 //	if(AllowDebugViewmodes())	TODO: Maybe needs module dependency
 	{
@@ -89,18 +134,51 @@ void FNodeSceneProxy::GetDynamicMeshElements(const TArray<const FSceneView*>& Vi
 			{
 				const FSceneView* View = Views[ViewIndex];
 				FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);
+				bool bHitTesting = PDI->IsHitTesting();
 
-				if(DrawType & SolidAndWireMeshes || DrawType & WireMesh)
+				int OtherAxes[EAxisIndex::Count][2] = {
+					{ EAxisIndex::Y, EAxisIndex::Z },
+					{ EAxisIndex::X, EAxisIndex::Z },
+					{ EAxisIndex::X, EAxisIndex::Y },
+				};
+				for(int axis = 0; axis < EAxisIndex::Count; ++axis)
 				{
-					auto Box = FBox{ GetActorPosition() - Extent * 0.5f, GetActorPosition() + Extent * 0.5f };
+					if(bHitTesting)
+					{
+						PDI->SetHitProxy(new HInteriorNodeFaceHitProxy(Node, (EAxisIndex)axis, EAxisDirection::Positive));
+					}
+
+					auto Norm = FVector::ZeroVector;
+					Norm[axis] = Extent[axis] * 0.5f;
+					auto Planar1 = FVector::ZeroVector;
+					Planar1[OtherAxes[axis][0]] = Extent[OtherAxes[axis][0]] * 0.5f;
+					auto Planar2 = FVector::ZeroVector;
+					Planar2[OtherAxes[axis][1]] = Extent[OtherAxes[axis][1]] * 0.5f;
 					auto Color = ColorFromMode(mode);
-					DrawWireBox(PDI, Box, Color, SDPG_World, DrawType & SolidAndWireMeshes ? 2 : 0, 0, true);
+					auto Base = Center + Norm;
+					PDI->DrawLine(Base - Planar1 - Planar2, Base - Planar1 + Planar2, Color, SDPG_World);
+					PDI->DrawLine(Base - Planar1 + Planar2, Base + Planar1 + Planar2, Color, SDPG_World);
+					PDI->DrawLine(Base + Planar1 + Planar2, Base + Planar1 - Planar2, Color, SDPG_World);
+					PDI->DrawLine(Base + Planar1 - Planar2, Base - Planar1 - Planar2, Color, SDPG_World);
+
+					if(bHitTesting)
+					{
+						PDI->SetHitProxy(new HInteriorNodeFaceHitProxy(Node, (EAxisIndex)axis, EAxisDirection::Negative));
+					}
+
+					Color = ColorFromMode(mode);
+					Base = Center - Norm;
+					PDI->DrawLine(Base - Planar1 - Planar2, Base - Planar1 + Planar2, Color, SDPG_World);
+					PDI->DrawLine(Base - Planar1 + Planar2, Base + Planar1 + Planar2, Color, SDPG_World);
+					PDI->DrawLine(Base + Planar1 + Planar2, Base + Planar1 - Planar2, Color, SDPG_World);
+					PDI->DrawLine(Base + Planar1 - Planar2, Base - Planar1 - Planar2, Color, SDPG_World);
+
+					if(bHitTesting)
+					{
+						PDI->SetHitProxy(nullptr);
+					}
 				}
-/*				if(DrawType & SolidAndWireMeshes || DrawType & SolidMesh)
-				{
-					GetBoxMesh(FTransform(Box.Box.GetCenter()).ToMatrixNoScale(), Box.Box.GetExtent(), MaterialCache[Box.Color.WithAlpha(60)], SDPG_World, ViewIndex, Collector);
-				}
-*/			}
+			}
 		}
 	}
 }
