@@ -5,21 +5,19 @@
 #include "Components/PrimitiveComponent.h"
 #include "DebugRenderSceneProxy.h"
 
-#include "NodeRenderingComponent.generated.h"
+#include "InteriorGraphRenderingComponent.generated.h"
 
 
 /**
  * 
  */
 UCLASS(hidecategories = Object)
-class UNodeRenderingComponent : public UPrimitiveComponent
+class UInteriorGraphRenderingComponent : public UPrimitiveComponent
 {
 	GENERATED_BODY()
 
-#if 0
-
 public:
-	UNodeRenderingComponent(FObjectInitializer const& OI);
+	UInteriorGraphRenderingComponent(FObjectInitializer const& OI);
 
 public:
 
@@ -28,6 +26,4 @@ public:
 	virtual FBoxSphereBounds CalcBounds(const FTransform &LocalToWorld) const override;
 	virtual void CreateRenderState_Concurrent() override;
 	virtual void DestroyRenderState_Concurrent() override;
-
-#endif
 };

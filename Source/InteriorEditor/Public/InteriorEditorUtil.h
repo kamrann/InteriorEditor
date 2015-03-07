@@ -25,6 +25,16 @@ enum class EAxisDirection {
 	None = 0,
 };
 
+struct FAxisUtils
+{
+	static const EAxisIndex OtherAxes[EAxisIndex::Count][2];
+
+	static inline bool IsBoxWithinBounds(FBox const& Box, EAxisIndex Axis, float Min, float Max)
+	{
+		return Box.Min[Axis] >= Min && Box.Max[Axis] <= Max;
+	}
+};
+
 struct FAxisAlignedPlanarArea
 {
 	EAxisIndex FixedAxis;
@@ -47,6 +57,11 @@ enum class EAABBRelativeAxisState {
 	Overlapping,	// Max of one box > Min of other box
 };
 
+
+inline float GetDirectionMultiplier(EAxisDirection Dir)
+{
+	return Dir == EAxisDirection::Positive ? 1.0f : (Dir == EAxisDirection::Negative ? -1.0f : 0.0f);
+}
 
 float CalculateRelativeAxisSeparation(EAxisIndex axis, FBox const& Box1, FBox const& Box2);
 EAABBRelativeAxisState CalculateRelativeAxisState(EAxisIndex axis, FBox const& Box1, FBox const& Box2, float Epsilon = 1.e-4f);

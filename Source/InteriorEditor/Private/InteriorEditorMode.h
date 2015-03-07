@@ -4,6 +4,7 @@
 
 #include "UnrealEd.h"
 #include "Editor.h"
+#include "InteriorEditorNodeFace.h"
 
 
 /*
@@ -35,6 +36,9 @@ public:
 	virtual void ActorMoveNotify() override;
 	virtual bool AllowWidgetMove() override;
 	virtual bool DisallowMouseDeltaTracking() const override;
+	virtual bool UsesTransformWidget(FWidget::EWidgetMode InWidgetMode) const override;
+	virtual bool ShouldDrawWidget() const override;
+	virtual EAxisList::Type GetWidgetAxisToDraw(FWidget::EWidgetMode InWidgetMode) const override;
 	virtual FVector GetWidgetLocation() const override;
 
 	virtual bool HandleClick(FEditorViewportClient* InViewport, HHitProxy* HitProxy, const FViewportClick& Click) override;
@@ -109,16 +113,57 @@ protected:
 
 	//ENUM_CLASS_FLAGS(EAxisExtremity)
 
+	enum ESelection {
+		Node	= 1 << 0,
+		Face	= 1 << 1,
+		Portal	= 1 << 2,
+
+		Any		= Node | Face | Portal
+	};
+
+	typedef uint32 SelectionType;
+
+	typedef TArray< NodeIdType > NodeList;
+	typedef TArray< FNodeFaceRef > FaceList;
+	typedef TArray< ConnectionIdType > PortalList;
+
 	static const float Epsilon;
+	static const float MinimumNodeSize;
+	static const float DefaultNodeSize;
 
 protected:
-	void CheckCreateGizmo();
-	void DestroyGizmo();
-	void UpdateNodeReferences();
-	FNodeList GetSelectedNodes() const;
-	FNodeList GetUnselectedNodes() const;
+//	void CheckCreateGizmo();
+//	void DestroyGizmo();
+//	void UpdateNodeReferences();
+//	FNodeList GetSelectedNodes() const;
+//	FNodeList GetUnselectedNodes() const;
 
 //	static float GetAxisExtremities(class AInteriorNodeActor* node, EAxis::Type axis, EAxisExtremity extremity);
+
+	bool IsNodeSelection() const;
+	bool IsFaceSelection() const;
+	bool IsPortalSelection() const;
+	bool IsSelection(SelectionType ST = ESelection::Any) const;
+	bool IsExclusiveSelection(SelectionType ST) const;
+	bool IsNodeOnlySelection() const;
+	bool IsFaceOnlySelection() const;
+	bool IsPortalOnlySelection() const;
+	int SelectionCount(SelectionType ST = ESelection::Any) const;
+
+	/*
+	Returns the primary selection (node at which the widget is displayed).
+	If the current selection is a face, it returns the node of that face.
+	*/
+	NodeIdType GetFirstSelectedNode() const;
+	bool IsAlreadySelected(class HHitProxy* HP) const;
+	void Select(class HHitProxy* HP);
+	void Deselect(class HHitProxy* HP);
+
+	NodeList GetNodeComplement(NodeList const& Nodes) const;
+	NodeList GetNodeComplement(NodeIdType const& Nd) const;
+	FaceList GetSelectionComplement(FaceList const& Sel) const;
+
+	void ClearSelection(SelectionType ST = ESelection::Any);
 
 	static bool ParseMovementKey(FKey Key, EAxisIndex& axis, EAxisDirection& direction);
 	static void SnapCameraToWorldAxis(FRotator const& CamRot, EAxisIndex& axis, EAxisDirection& direction);
@@ -127,24 +172,48 @@ protected:
 	Returns an ordered (increasing) list of unique axis values on the given axis, generated from
 	the extremities of the provided node list.
 	*/
-	static FAxisValueList GetDistinctAxisValues(FNodeList const& nodes, EAxisIndex axis, EAxisExtremity extremity);
+	FAxisValueList GetDistinctAxisValues(NodeList const& nodes, EAxisIndex axis, EAxisExtremity extremity) const;
+	
+	/*
+	Returns an ordered (increasing) list of unique axis values on the given axis, generated from
+	the faces perpendicular to the axis within the provided node list.
+	FAxisValueList GetDistinctFaceAxisValues(NodeList const& nodes, EAxisIndex axis, EAxisExtremity extremity) const;
+*/
+	float DetermineNextSnapOffset(FAxisValueList vals, FAxisValueList ref_vals, EAxisIndex axis, EAxisDirection direction) const;
+	float DetermineNextSnapOffset(NodeList const& nodes, NodeList const& ref_nodes, EAxisIndex axis, EAxisDirection direction) const;
 
-	static float DetermineNextSnapOffset(FNodeList const& nodes, FNodeList const& ref_nodes, EAxisIndex axis, EAxisDirection direction);
+	void TranslateNodes(NodeList const& nodes, FVector const& offset);
+	void SnapNodes(NodeList const& nodes, NodeList const& ref_nodes, EAxisIndex axis, EAxisDirection direction);
 
-	void TranslateNodes(FNodeList const& nodes, FVector const& offset);
-	void SnapNodes(FNodeList const& nodes, FNodeList const& ref_nodes, EAxisIndex axis, EAxisDirection direction);
+	bool TranslateFace(FNodeFaceRef const& face, float offset, bool bUpdate);
+	void SnapSingleFace(FNodeFaceRef const& face, NodeList const& ref_nodes, EAxisDirection direction);
+
+	bool TranslatePortal(ConnectionIdType CId, FVector const& offset, bool bUpdate);
+	bool ResizePortal(ConnectionIdType CId, FVector const& scale, bool bUpdate);
+	/*
+	Snap the portal to the boundary of the shared surface between the two nodes
+	*/
+	void SnapSinglePortal(ConnectionIdType CId, EAxisIndex axis, EAxisDirection direction);
+
+	void Redraw() const;
 
 protected:
 	class AInteriorGraphActor* Graph;
-	FNodeList Nodes;
+//	FNodeList Nodes;
 
-	class AInteriorGizmoActor* Gizmo;
+	NodeList SelectedNodes;
+	FaceList SelectedFaces;
+	PortalList SelectedPortals;
+
+//	class AInteriorGizmoActor* Gizmo;
 
 public:
 	class UInteriorEditorModeSettings* Settings;
 
 	//
 	FVector SnapDelta;
+
+	friend class FGraphSceneProxy;
 };
 
 

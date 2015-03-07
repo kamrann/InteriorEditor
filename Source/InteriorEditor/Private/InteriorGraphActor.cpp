@@ -7,6 +7,7 @@
 #include "InteriorEditorUtil.h"
 #include "Engine/World.h"
 #include "VisibilityHelpers.h"
+#include "InteriorGraphRenderingComponent.h"
 
 #include <algorithm>
 
@@ -16,20 +17,32 @@ struct TArrayPred
 	TArrayPred(FConnectionKey key): key_(key)
 	{}
 
-	inline bool operator() (AInteriorConnectionActor* conn) const
+/*	inline bool operator() (AInteriorConnectionActor* conn) const
 	{
 		return FConnectionKey{ conn->Node1, conn->Node2 } == key_;
+	}
+*/
+	inline bool operator() (FConnectionData const& conn) const
+	{
+		return FConnectionKey{ conn.Src, conn.Dest } == key_;
 	}
 
 	FConnectionKey key_;
 };
 
 
-inline bool operator== (AInteriorConnectionActor const* Conn, FConnectionKey const& Key)
+inline bool operator== (FConnectionData const& Conn, FConnectionKey const& Key)
 {
-	return FConnectionKey{ Conn->Node1, Conn->Node2 } == Key;
+	return FConnectionKey{ Conn.Src, Conn.Dest } == Key;
 }
 
+
+AInteriorGraphActor::AInteriorGraphActor():
+NextNodeId(0),
+NextConnectionId(0)
+{
+	RootComponent = CreateEditorOnlyDefaultSubobject< UInteriorGraphRenderingComponent >(TEXT("RenderComp"));
+}
 
 AInteriorGraphActor::NodeIdList AInteriorGraphActor::GetAllNodes() const
 {
@@ -68,12 +81,38 @@ AInteriorGraphActor::NodeIdList AInteriorGraphActor::GetAdjacentNodes(NodeIdType
 
 FNodeData const& AInteriorGraphActor::GetNodeData(NodeIdType id) const
 {
+#if WITH_EDITOR
+	return NodeData[NodeMap[id]];
+#else
 	return NodeData[id];
+#endif
 }
 
 FConnectionData const& AInteriorGraphActor::GetConnectionData(ConnectionIdType id) const
 {
+#if WITH_EDITOR
+	return ConnData[ConnectionMap[id]];
+#else
 	return ConnData[id];
+#endif
+}
+
+FNodeData& AInteriorGraphActor::GetNodeDataRef(NodeIdType id)
+{
+#if WITH_EDITOR
+	return NodeData[NodeMap[id]];
+#else
+	return NodeData[id];
+#endif
+}
+
+FConnectionData& AInteriorGraphActor::GetConnectionDataRef(ConnectionIdType id)
+{
+#if WITH_EDITOR
+	return ConnData[ConnectionMap[id]];
+#else
+	return ConnData[id];
+#endif
 }
 
 NodeIdType AInteriorGraphActor::GetNodeFromPosition(FVector const& pos) const
@@ -89,55 +128,92 @@ NodeIdType AInteriorGraphActor::GetNodeFromPosition(FVector const& pos) const
 	return NullNode;
 }
 
+AInteriorGraphActor::ConnectionIdList AInteriorGraphActor::GetNodeOutConnections(NodeIdType id) const
+{
+	return GetNodeData(id).Outgoing;
+}
 
-bool AInteriorGraphActor::AddConnection(
-	class AInteriorNodeActor* N1,
-	class AInteriorNodeActor* N2,
+AInteriorGraphActor::ConnectionIdList AInteriorGraphActor::GetNodeInConnections(NodeIdType id) const
+{
+	ConnectionIdList In;
+	for(auto const& Cn : ConnectionMap)
+	{
+		if(GetConnectionData(Cn.Value).Dest == id)
+		{
+			In.Add(Cn.Key);
+		}
+	}
+	return In;
+}
+
+AInteriorGraphActor::ConnectionIdList AInteriorGraphActor::GetAllNodeConnections(NodeIdType id) const
+{
+	auto List = GetNodeOutConnections(id);
+	List += GetNodeInConnections(id);
+	return List;
+}
+
+
+/*
+Editing interface implementation
+*/
+NodeIdType AInteriorGraphActor::AddNode(FVector const& Min, FVector const& Max)
+{
+	FNodeData Nd;
+	Nd.Min = Min;
+	Nd.Max = Max;
+
+	auto Idx = NodeData.Add(Nd);
+	auto Id = NextNodeId++;
+	NodeMap.Add(Id, Idx);
+	return Id;
+}
+
+ConnectionIdType AInteriorGraphActor::AddConnection(
+	//class AInteriorNodeActor* N1,
+	//class AInteriorNodeActor* N2,
+	NodeIdType N1,
+	NodeIdType N2,
 	FAxisAlignedPlanarArea const& area
 	)
 {
-//	if(Connections.Contains(FConnectionKey{ N1, N2 }))
-	if(Connections.ContainsByPredicate(TArrayPred{ FConnectionKey{ N1, N2 } }))
+/*	if(ConnData.ContainsByPredicate(TArrayPred{ FConnectionKey{ N1, N2 } }))
 	{
-		return false;
+		return NullConnection;
 	}
-
-	auto World = GetWorld();
-	auto Conn = CreateConnection(N1, N2, area);
-	if(Conn)
-	{
-		Connections.Add(Conn);
-		return true;
-	}
-	else
-	{
-		return false;
-	}
+*/
+	return CreateConnection(N1, N2, area);
 }
 
-bool AInteriorGraphActor::RemoveConnection(class AInteriorNodeActor* N1, class AInteriorNodeActor* N2)
+int AInteriorGraphActor::RemoveConnections(NodeIdType N1, NodeIdType N2)
 {
 	auto Key = FConnectionKey{ N1, N2 };
-	/*	auto Id = Connections.FindId(Key);
-	if(Id.IsValidId())
-	{
-	todo: destroy actor 
-	Connections.Remove(Key);
-	return true;
-	}
-	*/
 
-	auto Conn = FindConnection(Key);
-	if(Conn)
+	ConnectionIdType CId;
+	int Count = 0;
+	while((CId = FindFirstConnection(Key)) != NullConnection)
 	{
-		// TODO: Or RemoveActor()? What's difference?
-		GetWorld()->DestroyActor(Conn);
-		Connections.RemoveAll(TArrayPred{ Key });
-		return true;
+		//ConnData.RemoveAll(TArrayPred{ Key });
+		auto bRemoved = RemoveConnection(CId);
+		check(bRemoved);
+		++Count;
 	}
 
-	return false;
+	return Count;
 }
+
+void AInteriorGraphActor::SetNodeData(NodeIdType id, FNodeData&& ND)
+{
+	auto& Node = GetNodeDataRef(id);
+	Node = std::move(ND);
+}
+
+void AInteriorGraphActor::SetConnectionData(ConnectionIdType id, FConnectionData&& CD)
+{
+	auto& Conn = GetConnectionDataRef(id);
+	Conn = std::move(CD);
+}
+
 #if 0
 bool AInteriorGraphActor::ToggleConnection(class AInteriorNodeActor* N1, class AInteriorNodeActor* N2)
 {
@@ -169,6 +245,7 @@ bool AInteriorGraphActor::ToggleConnection(class AInteriorNodeActor* N1, class A
 }
 #endif
 
+/*
 void AInteriorGraphActor::GatherNodes()
 {
 	Nodes.Empty();
@@ -177,7 +254,7 @@ void AInteriorGraphActor::GatherNodes()
 		Nodes.Add(*It);
 	}
 }
-
+*/
 void AInteriorGraphActor::RemoveHiddenNodes(TMap< NodeIdType, FNodeData >& BuildND, TMap< ConnectionIdType, FConnectionData >& BuildCD)
 {
 	for(auto It = BuildND.CreateIterator(); It; ++It)
@@ -274,6 +351,7 @@ void AInteriorGraphActor::PackNodeAndConnectionData(TMap< NodeIdType, FNodeData 
 
 bool AInteriorGraphActor::BuildGraph(int32 Subdivision, int32 SubdivisionZ)
 {
+#if 0
 	TMap< AInteriorNodeActor*, TArray< NodeIdType > > NodeMap;
 
 	GatherNodes();
@@ -397,34 +475,220 @@ bool AInteriorGraphActor::BuildGraph(int32 Subdivision, int32 SubdivisionZ)
 	RemoveHiddenNodes(BuildND, BuildCD);
 	PackNodeAndConnectionData(BuildND, BuildCD);
 	return true;
+#endif
+	return false;
 }
 
-AInteriorConnectionActor* AInteriorGraphActor::FindConnection(FConnectionKey const& Key) const
+bool AInteriorGraphActor::RemoveNode(NodeIdType Id)
 {
-	/*
-	return Connections.Find(Key);
-	*/
-	auto result = Connections.FindByKey(Key);
-	return result == nullptr ? nullptr : *result;
-}
-
-AInteriorConnectionActor* AInteriorGraphActor::CreateConnection(
-	class AInteriorNodeActor* N1,
-	class AInteriorNodeActor* N2,
-	FAxisAlignedPlanarArea const& area) const
-{
-	auto Conn = GetWorld()->SpawnActor< AInteriorConnectionActor >();
-	if(Conn)
+	if(!NodeMap.Contains(Id))
 	{
-		Conn->Node1 = N1;
-		Conn->Node2 = N2;
-		Conn->Extent = area.Max - area.Min;
-		Conn->SetActorLocation((area.Min + area.Max) / 2.f);
-		Cast< UPrimitiveComponent >(Conn->GetRootComponent())->MarkRenderStateDirty();
+		return false;
 	}
-	return Conn;
+
+	// Remove all connection into and out of this node
+	auto Conns = GetAllNodeConnections(Id);
+	for(auto CId : Conns)
+	{
+		RemoveConnection(CId);
+	}
+
+	// Finally, remove the node itself
+	// Note we are currently just removing the map key without condensing the array and remapping
+	NodeData[NodeMap[Id]] = FNodeData{};
+	NodeMap.Remove(Id);
+
+	return true;
 }
 
+bool AInteriorGraphActor::RemoveConnection(ConnectionIdType Id)
+{
+	if(!ConnectionMap.Contains(Id))
+	{
+		return false;
+	}
+
+	ConnData[ConnectionMap[Id]] = FConnectionData{};
+	ConnectionMap.Remove(Id);
+
+	return true;
+}
+
+ConnectionIdType AInteriorGraphActor::FindFirstConnection(FConnectionKey const& Key) const
+{
+	auto ElemPtr = ConnData.FindByPredicate(TArrayPred{ Key });
+	if(ElemPtr)
+	{
+		auto Idx = ElemPtr - ConnData.GetData();
+		auto KeyPtr = ConnectionMap.FindKey(Idx);
+		check(KeyPtr);
+		return *KeyPtr;
+	}
+
+	return NullConnection;
+}
+
+ConnectionIdType AInteriorGraphActor::CreateConnection(
+	NodeIdType N1,
+	NodeIdType N2,
+	FAxisAlignedPlanarArea const& area)
+{
+	FConnectionData Conn;
+	Conn.Src = N1;
+	Conn.Dest = N2;
+	Conn.Portal = FBox{ area.Min, area.Max };
+
+	auto Idx = ConnData.Add(Conn);
+	auto Id = NextConnectionId++;
+	ConnectionMap.Add(Id, Idx);
+	return Id;
+}
+
+void AInteriorGraphActor::GetPackedData(TArray< FNodeData >& PackedNodes, TArray< FConnectionData >& PackedConnections) const
+{
+	PackedNodes.Empty(NodeMap.Num());
+	PackedConnections.Empty(ConnectionMap.Num());
+
+/*	NodeMap.KeySort([](NodeIdType A, NodeIdType B)
+	{
+		return A < B;
+	});
+*/	TMap< NodeIdType, int32 > NodeIdMap;
+	for(auto const& Nd : NodeMap)
+	{
+		NodeIdMap.Add(Nd.Key, NodeIdMap.Num());
+	}
+
+/*	ConnectionMap.KeySort([](ConnectionIdType A, ConnectionIdType B)
+	{
+		return A < B;
+	});
+*/	TMap< ConnectionIdType, int32 > ConnectionIdMap;
+	for(auto const& Cn : ConnectionMap)
+	{
+		ConnectionIdMap.Add(Cn.Key, ConnectionIdMap.Num());
+	}
+
+	for(auto const& Nd : NodeMap)
+	{
+		auto ND = NodeData[Nd.Value];
+		for(auto& Out : ND.Outgoing)
+		{
+			Out = ConnectionIdMap[Out];
+		}
+
+		auto NId = PackedNodes.Add(ND);
+//		NewNodeMap.Add(NId, NId);
+	}
+
+	for(auto const& Cn : ConnectionMap)
+	{
+		auto CD = ConnData[Cn.Value];
+		CD.Src = NodeIdMap[CD.Src];
+		CD.Dest = NodeIdMap[CD.Dest];
+		
+		auto CId = PackedConnections.Add(CD);
+//		NewConnectionMap.Add(CId, CId);
+	}
+
+/*	NodeData = std::move(NewNodes);
+	ConnData = std::move(NewConnections);
+	NodeMap = std::move(NewNodeMap);
+	ConnectionMap = std::move(NewConnectionMap);
+	*/
+}
+
+
+struct NodeRecord
+{
+	FVector Min, Max;
+};
+
+FArchive& operator<< (FArchive& Ar, NodeRecord& Rec)
+{
+	Ar << Rec.Min << Rec.Max;
+	return Ar;
+}
+
+struct ConnectionRecord
+{
+	int32 Src, Dest;
+	FBox Portal;
+};
+
+FArchive& operator<< (FArchive& Ar, ConnectionRecord& Rec)
+{
+	Ar << Rec.Src << Rec.Dest << Rec.Portal;
+	return Ar;
+}
+
+void AInteriorGraphActor::Serialize(FArchive& Ar)
+{
+	Super::Serialize(Ar);
+
+	TArray< NodeRecord > NodeRecords;
+	TArray< ConnectionRecord > ConnectionRecords;
+	if(Ar.IsSaving())
+	{
+		// Ensure ids are reduced to 0-based with no gaps. This way we don't need to serialize them, since
+		// they are just equivalent to the position within the serialized array.
+		TArray< FNodeData > PackedNodes;
+		TArray< FConnectionData > PackedConnections;
+		GetPackedData(PackedNodes, PackedConnections);
+
+		for(auto const& Nd : PackedNodes)
+		{
+			NodeRecord NR;
+			NR.Min = Nd.Min;
+			NR.Max = Nd.Max;
+			NodeRecords.Add(NR);
+		}
+
+		for(auto const& Cn : PackedConnections)
+		{
+			ConnectionRecord CR;
+			CR.Src = Cn.Src;
+			CR.Dest = Cn.Dest;
+			CR.Portal = Cn.Portal;
+			ConnectionRecords.Add(CR);
+		}
+	}
+
+	Ar << NodeRecords;
+	Ar << ConnectionRecords;
+
+	if(Ar.IsLoading())
+	{
+		NodeData.Empty(NodeRecords.Num());
+		NodeMap.Empty(NodeData.Num());
+		for(auto const& NR : NodeRecords)
+		{
+			FNodeData Nd;
+			Nd.Min = NR.Min;
+			Nd.Max = NR.Max;
+			auto Idx = NodeData.Add(Nd);
+
+			NodeMap.Add(Idx, Idx);
+		}
+
+		ConnData.Empty(ConnectionRecords.Num());
+		for(auto const& CR : ConnectionRecords)
+		{
+			FConnectionData Cn;
+			Cn.Src = CR.Src;
+			Cn.Dest = CR.Dest;
+			Cn.Portal = CR.Portal;
+			auto Idx = ConnData.Add(Cn);
+
+			ConnectionMap.Add(Idx, Idx);
+
+			NodeData[Cn.Src].Outgoing.Add(Idx);
+		}
+
+		NextNodeId = NodeMap.Num();
+		NextConnectionId = ConnectionMap.Num();
+	}
+}
 
 void AInteriorGraphActor::PreInitializeComponents()
 {

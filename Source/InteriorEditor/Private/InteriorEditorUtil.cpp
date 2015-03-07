@@ -4,6 +4,14 @@
 #include "InteriorEditorUtil.h"
 
 
+// Perhaps there is an ideal ordering defined by the handedness of the coordinate system?
+const EAxisIndex FAxisUtils::OtherAxes[EAxisIndex::Count][2] = {
+	{ EAxisIndex::Y, EAxisIndex::Z },
+	{ EAxisIndex::X, EAxisIndex::Z },
+	{ EAxisIndex::X, EAxisIndex::Y },
+};
+
+
 float CalculateRelativeAxisSeparation(EAxisIndex axis, FBox const& Box1, FBox const& Box2)
 {
 	return Box1.Min[axis] < Box2.Min[axis] ?

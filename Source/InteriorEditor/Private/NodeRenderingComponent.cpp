@@ -1,6 +1,9 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "InteriorEditorPrivatePCH.h"
+
+#if 0
+
 #include "NodeRenderingComponent.h"
 #include "InteriorNodeActor.h"
 #include "InteriorEditorHitProxies.h"
@@ -112,11 +115,6 @@ void FNodeSceneProxy::GetDynamicMeshElements(const TArray<const FSceneView*>& Vi
 				FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);
 				bool bHitTesting = true;// PDI->IsHitTesting();
 
-				int OtherAxes[EAxisIndex::Count][2] = {
-					{ EAxisIndex::Y, EAxisIndex::Z },
-					{ EAxisIndex::X, EAxisIndex::Z },
-					{ EAxisIndex::X, EAxisIndex::Y },
-				};
 				for(int axis = 0; axis < EAxisIndex::Count; ++axis)
 				{
 					if(bHitTesting)
@@ -127,9 +125,9 @@ void FNodeSceneProxy::GetDynamicMeshElements(const TArray<const FSceneView*>& Vi
 					auto Norm = FVector::ZeroVector;
 					Norm[axis] = Extent[axis] * 0.5f;
 					auto Planar1 = FVector::ZeroVector;
-					Planar1[OtherAxes[axis][0]] = Extent[OtherAxes[axis][0]] * 0.5f;
+					Planar1[FAxisUtils::OtherAxes[axis][0]] = Extent[FAxisUtils::OtherAxes[axis][0]] * 0.5f;
 					auto Planar2 = FVector::ZeroVector;
-					Planar2[OtherAxes[axis][1]] = Extent[OtherAxes[axis][1]] * 0.5f;
+					Planar2[FAxisUtils::OtherAxes[axis][1]] = Extent[FAxisUtils::OtherAxes[axis][1]] * 0.5f;
 					auto Color = ColorFromMode(mode);
 					auto Base = Center + Norm;
 					PDI->DrawLine(Base - Planar1 - Planar2, Base - Planar1 + Planar2, Color, SDPG_World);
@@ -210,4 +208,4 @@ void UNodeRenderingComponent::DestroyRenderState_Concurrent()
 }
 
 
-
+#endif

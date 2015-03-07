@@ -12,12 +12,14 @@
 
 struct FConnectionKey
 {
-	class AInteriorNodeActor* N1;
-	class AInteriorNodeActor* N2;
+//	class AInteriorNodeActor* N1;
+//	class AInteriorNodeActor* N2;
+	NodeIdType Src;
+	NodeIdType Dest;
 
 	inline bool operator== (FConnectionKey const& K) const
 	{
-		return N1 == K.N1 && N2 == K.N2;
+		return Src == K.Src && Dest == K.Dest;
 	}
 };
 
@@ -55,7 +57,7 @@ struct FConnKeyFuncs: BaseKeyFuncs< class AInteriorConnectionActor*, FConnection
 #endif
 
 /*
-Actor representing the interior graph
+Actor representing the interior graph.
 */
 UCLASS()
 class INTERIOREDITOR_API AInteriorGraphActor: public AActor
@@ -63,55 +65,81 @@ class INTERIOREDITOR_API AInteriorGraphActor: public AActor
 	GENERATED_BODY()
 
 public:
-	UPROPERTY()
-	TArray< class AInteriorNodeActor* > Nodes;
+//	UPROPERTY()
+//	TArray< class AInteriorNodeActor* > Nodes;
 
-	UPROPERTY()
-	TArray< class AInteriorConnectionActor* > Connections;
-		// TODO: TSet not serializable. Will this come in future?
+//	UPROPERTY()
+//	TArray< class AInteriorConnectionActor* > Connections;
+
+	/*
+	When a level is being played, ***IdType is considered to be an index into these arrays.
+	*/
+	//UPROPERTY()
+	TArray< FNodeData > NodeData;
+
+	//UPROPERTY()
+	TArray< FConnectionData > ConnData;
+
+	// TODO: TSet not serializable. Will this come in future?
 //	TSet< class AInteriorConnectionActor*, FConnKeyFuncs > Connections;
 
+	// Temp
+	UPROPERTY(EditAnywhere)
+	UMaterial* Mat;
+
 public:
-	static const NodeIdType NullNode = -1;
+	AInteriorGraphActor();
 
+public:
 	typedef TArray< NodeIdType > NodeIdList;
-
-	static const ConnectionIdType NullConnection = -1;
-
 	typedef TArray< ConnectionIdType > ConnectionIdList;
 
-/*	struct FConnectionNodes
-	{
-		NodeIdType N1;
-		NodeIdType N2;
-	};
-*/	
+	/*
+	Interface to the graph for when in-game
+	*/
 	NodeIdList GetAllNodes() const;
 	ConnectionIdList GetAllConnections() const;
 
 	FNodeData const& GetNodeData(NodeIdType id) const;
 	FConnectionData const& GetConnectionData(ConnectionIdType id) const;
-	NodeIdList GetAdjacentNodes(NodeIdType src) const;
 
+	FNodeData& GetNodeDataRef(NodeIdType id);
+	FConnectionData& GetConnectionDataRef(ConnectionIdType id);
+
+	NodeIdList GetAdjacentNodes(NodeIdType src) const;
 	NodeIdType GetNodeFromPosition(FVector const& pos) const;
+	ConnectionIdList GetNodeOutConnections(NodeIdType id) const;
+	ConnectionIdList GetNodeInConnections(NodeIdType id) const;
+	ConnectionIdList GetAllNodeConnections(NodeIdType id) const;
 
 public:
-	bool AddConnection(class AInteriorNodeActor* N1, class AInteriorNodeActor* N2, struct FAxisAlignedPlanarArea const& area);
-	bool RemoveConnection(class AInteriorNodeActor* N1, class AInteriorNodeActor* N2);
+	/*
+	Interface to the graph when editing
+	*/
+	NodeIdType AddNode(FVector const& Min, FVector const& Max);
+	ConnectionIdType AddConnection(NodeIdType N1, NodeIdType N2, struct FAxisAlignedPlanarArea const& area);
+	bool RemoveNode(NodeIdType Id);
+	int RemoveConnections(NodeIdType N1, NodeIdType N2);
 //	bool ToggleConnection(class AInteriorNodeActor* N1, class AInteriorNodeActor* N2);
 
-	void GatherNodes();
+	void SetNodeData(NodeIdType id, FNodeData&& ND);
+	void SetConnectionData(ConnectionIdType id, FConnectionData&& CD);
+
+
+//	void GatherNodes();
 	bool BuildGraph(int32 Subdivision = 1, int32 SubdivisionZ = 1);
 
 private:
-	class AInteriorConnectionActor* FindConnection(FConnectionKey const& Key) const;
-	class AInteriorConnectionActor* CreateConnection(class AInteriorNodeActor* N1, class AInteriorNodeActor* N2, FAxisAlignedPlanarArea const& area) const;
+	bool RemoveConnection(ConnectionIdType Id);
+	ConnectionIdType FindFirstConnection(FConnectionKey const& Key) const;
+	ConnectionIdType CreateConnection(NodeIdType N1, NodeIdType N2, FAxisAlignedPlanarArea const& area);
+	void GetPackedData(TArray< FNodeData >& PackedNodes, TArray< FConnectionData >& PackedConnections) const;
 
-	inline NodeIdType GetNodeId(const FNodeData* nd) const
+/*	inline NodeIdType GetNodeId(const FNodeData* nd) const
 	{
 		return nd - NodeData.GetData();
 	}
-
+*/
 	inline bool PointInNode(FVector const& pos, FNodeData const& nd) const
 	{
 		return
@@ -126,19 +154,31 @@ private:
 
 public:
 	// Overrides
+	virtual void Serialize(FArchive& Ar) override;
 	virtual void PreInitializeComponents() override;
 
 	static void AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector);
 
 protected:
-	TArray< FNodeData > NodeData;
-	TArray< FConnectionData > ConnData;
+#if WITH_EDITOR
+	NodeIdType NextNodeId;
+	ConnectionIdType NextConnectionId;
+
+	/*
+	In editor, a ***IdType value must be passed through these maps to retrieve the index of the node/connection
+	in the NodeData/ConnectionData array.
+	*/
+	TMap< NodeIdType, int32 > NodeMap;
+	TMap< ConnectionIdType, int32 > ConnectionMap;
+#endif
 
 #if INTERIOR_GRAPH_DEBUG_NAMES
 public:
 	TMap< NodeIdType, FString > NodeNames;
 	TMap< ConnectionIdType, FString > ConnNames;
 #endif
+
+	friend class FGraphSceneProxy;
 };
 
 

@@ -2,14 +2,14 @@
 
 #include "InteriorEditorPrivatePCH.h"
 #include "InteriorNodeActor.h"
-#include "NodeRenderingComponent.h"
+//#include "NodeRenderingComponent.h"
 
 
 AInteriorNodeActor::AInteriorNodeActor(FObjectInitializer const& OI):
 Super(OI)
 , Extent{ 100.f, 100.f, 100.f }
 {
-	RootComponent = OI.CreateEditorOnlyDefaultSubobject< UNodeRenderingComponent >(this, TEXT("RenderComp"));
+//	RootComponent = OI.CreateEditorOnlyDefaultSubobject< UNodeRenderingComponent >(this, TEXT("RenderComp"));
 }
 
 

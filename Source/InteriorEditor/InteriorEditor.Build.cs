@@ -22,6 +22,8 @@ public class InteriorEditor : ModuleRules
 //				"RawMesh",
                 "UnrealEd",
 //                "MainFrame"
+                "RHI",
+                "RenderCore"
             }
         );
 

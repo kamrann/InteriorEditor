@@ -3,21 +3,28 @@
 #pragma once
 
 #include "HitProxies.h"
+#include "InteriorEditorNodeFace.h"
 
 
-class HInteriorNodeFaceHitProxy: public HHitProxy
+class HInteriorHitProxy: public HHitProxy
+{
+	DECLARE_HIT_PROXY(INTERIOREDITOR_API)
+};
+
+class HInteriorNodeHitProxy: public HHitProxy
 {
 	DECLARE_HIT_PROXY(INTERIOREDITOR_API)
 
-	HInteriorNodeFaceHitProxy(AInteriorNodeActor* Nd, EAxisIndex Axis, EAxisDirection Dir):
-		Node(Nd), FaceAxis(Axis), FaceDir(Dir)
+	HInteriorNodeHitProxy(NodeIdType NId):
+		Node(NId)
 	{
 
 	}
 
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) override
 	{
-		Collector.AddReferencedObject(Node);
+		// TODO: If allow multiple graphs in a level, will need to store ref here
+		//		Collector.AddReferencedObject(Face.Node);
 	}
 
 	virtual EMouseCursor::Type GetMouseCursor()
@@ -25,9 +32,56 @@ class HInteriorNodeFaceHitProxy: public HHitProxy
 		return EMouseCursor::Crosshairs;
 	}
 
-	AInteriorNodeActor* Node;
-	EAxisIndex FaceAxis;
-	EAxisDirection FaceDir;
+	NodeIdType Node;
+};
+
+class HInteriorNodeFaceHitProxy: public HInteriorNodeHitProxy
+{
+	DECLARE_HIT_PROXY(INTERIOREDITOR_API)
+
+	HInteriorNodeFaceHitProxy(NodeIdType NId, EAxisIndex Axis, EAxisDirection Dir):
+		HInteriorNodeHitProxy(NId)
+		, Face(Axis, Dir)
+	{
+
+	}
+
+	virtual void AddReferencedObjects(FReferenceCollector& Collector) override
+	{
+		// TODO: If allow multiple graphs in a level, will need to store ref here
+//		Collector.AddReferencedObject(Face.Node);
+	}
+
+	virtual EMouseCursor::Type GetMouseCursor()
+	{
+		return EMouseCursor::Crosshairs;
+	}
+
+	FFaceId Face;
+};
+
+class HInteriorPortalHitProxy: public HHitProxy
+{
+	DECLARE_HIT_PROXY(INTERIOREDITOR_API)
+
+	HInteriorPortalHitProxy(ConnectionIdType CId):
+		Conn(CId)
+	{
+
+	}
+
+	virtual void AddReferencedObjects(FReferenceCollector& Collector) override
+	{
+		// TODO: If allow multiple graphs in a level, will need to store ref here
+		//		Collector.AddReferencedObject(Face.Node);
+	}
+
+	virtual EMouseCursor::Type GetMouseCursor()
+	{
+		return EMouseCursor::Crosshairs;
+	}
+
+	ConnectionIdType Conn;
 };
 
 
