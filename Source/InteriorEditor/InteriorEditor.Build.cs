@@ -19,9 +19,9 @@ public class InteriorEditor : ModuleRules
                 "EditorStyle",
                 "PropertyEditor",
                 "InputCore",
-//				"RawMesh",
+				"RawMesh",
                 "UnrealEd",
-//                "MainFrame"
+                "AssetRegistry",
                 "RHI",
                 "RenderCore"
             }

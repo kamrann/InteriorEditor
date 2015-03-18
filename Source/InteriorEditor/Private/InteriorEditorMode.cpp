@@ -6,12 +6,19 @@
 #include "InteriorNodeActor.h"
 #include "InteriorGizmoActor.h"
 #include "InteriorEditorHitProxies.h"
+#include "InteriorNodeSelectionProxy.h"
+#include "InteriorFaceSelectionProxy.h"
+#include "InteriorPortalSelectionProxy.h"
 #include "InteriorEditorModeSettings.h"
+#include "InteriorEditorConversion.h"
 #include "SInteriorEditor.h"
+#include "SCreateAssetFromObject.h"
 #include "Editor/UnrealEd/Public/Toolkits/ToolkitManager.h"
 #include "ScopedTransaction.h"
 
 #include <algorithm>
+
+#define LOCTEXT_NAMESPACE "InteriorEditor"
 
 
 const FName FInteriorEditorMode::ModeId = TEXT("Interior");
@@ -19,11 +26,17 @@ const float FInteriorEditorMode::Epsilon = 0.1f;
 const float FInteriorEditorMode::MinimumNodeSize = 10.0f;
 const float FInteriorEditorMode::DefaultNodeSize = 300.0f;
 
+
 FInteriorEditorMode::FInteriorEditorMode()
 {
 	Graph = nullptr;
 //	Gizmo = nullptr;
-
+	
+/*	SelectionProxy = NewNamedObject< UInteriorNodeSelectionProxy >(
+		GetTransientPackage(), TEXT("NodeSelProxy"));
+		//ConstructObject< UInteriorNodeSelectionProxy >(
+		//UInteriorNodeSelectionProxy::StaticClass(), GetTransientPackage(), TEXT("NodeSelProxy"));
+*/
 	Settings = ConstructObject< UInteriorEditorModeSettings >(
 		UInteriorEditorModeSettings::StaticClass(), GetTransientPackage(), NAME_None, RF_Transactional);
 	Settings->SetParent(this);
@@ -34,7 +47,12 @@ void FInteriorEditorMode::AddReferencedObjects(FReferenceCollector& Collector)
 	// Call parent implementation
 	FEdMode::AddReferencedObjects(Collector);
 
+//	Collector.AddReferencedObject(SelectionProxy);
 	Collector.AddReferencedObject(Settings);
+
+	Collector.AddReferencedObjects(NodeSelectionProxies);
+	Collector.AddReferencedObjects(FaceSelectionProxies);
+	Collector.AddReferencedObjects(PortalSelectionProxies);
 }
 
 
@@ -54,6 +72,10 @@ void FInteriorEditorMode::Enter()
 	}
 
 	GEditor->SelectNone(false, true);
+	//auto Selection = GEditor->GetSelectedObjects();
+	//Selection->Select(SelectionProxy, true);
+	//USelection::SelectionChangedEvent.Broadcast(Selection);
+	//GEditor->UpdateFloatingPropertyWindows();
 
 //	CheckCreateGizmo();
 	//GEditor->SelectActor(Gizmo, true, true);
@@ -87,8 +109,8 @@ void FInteriorEditorMode::Exit()
 
 //	DestroyGizmo();
 
-	SelectedNodes.Empty();
-	SelectedFaces.Empty();// = FNodeFaceRef{};
+	ClearSelection();
+	GEditor->SelectNone(false, true);
 
 	Redraw();
 
@@ -98,7 +120,7 @@ void FInteriorEditorMode::Exit()
 bool FInteriorEditorMode::IsSelectionAllowed(AActor* InActor, bool bInSelection) const
 {
 	// TODO: Probably want to be more strict depending on sel/desel and existing selection
-	return false;// InActor->IsA< AInteriorGizmoActor >() || InActor->IsA< AInteriorNodeActor >();
+	return InActor->IsA< AInteriorGraphActor >();// false;// InActor->IsA< AInteriorGizmoActor >() || InActor->IsA< AInteriorNodeActor >();
 }
 
 void FInteriorEditorMode::ActorMoveNotify()
@@ -225,7 +247,18 @@ bool FInteriorEditorMode::HandleClick(FEditorViewportClient* InViewport, HHitPro
 			}
 			else
 			{
-				if(!Click.IsControlDown())
+				if(Click.IsControlDown())
+				{
+					if(IsNodeOnlySelection() && !HP->IsA(HInteriorNodeHitProxy::StaticGetType())
+						|| IsFaceOnlySelection() && !HP->IsA(HInteriorNodeFaceHitProxy::StaticGetType())
+						|| IsPortalOnlySelection() && !HP->IsA(HInteriorPortalHitProxy::StaticGetType())
+						)
+					{
+						// Not supporting multi selection of multiple element types
+						return true;
+					}
+				}
+				else
 				{
 					ClearSelection();
 				}
@@ -285,10 +318,12 @@ bool FInteriorEditorMode::InputKey(
 		auto Min = Pos - Extent / 2;
 		auto Max = Pos + Extent / 2;
 		Graph->AddNode(Min, Max);
+
+		Redraw();
+		return true;
 	}
 	else if(Event == EInputEvent::IE_Pressed
-		&& Key.ToString() == TEXT("Delete")
-		&& IsNodeOnlySelection())
+		&& Key.ToString() == TEXT("Delete"))
 	{
 		FScopedTransaction Trans(TEXT("InteriorEditor"), FText::FromString(TEXT("Delete Node(s)")), Graph);
 		Graph->Modify();
@@ -297,7 +332,12 @@ bool FInteriorEditorMode::InputKey(
 		{
 			Graph->RemoveNode(NId);
 		}
+		for(auto const& CId : SelectedPortals)
+		{
+			Graph->RemoveConnection(CId);
+		}
 		ClearSelection();
+		return true;
 	}
 	else if(Event == EInputEvent::IE_Pressed
 //		&& Viewport->KeyState(EKeys::LeftAlt)
@@ -312,19 +352,7 @@ bool FInteriorEditorMode::InputKey(
 		}
 */
 		// Try to add
-		FAxisAlignedPlanarArea Surface;
-		if(TestForSharedSurface(
-			Graph->GetNodeData(SelectedNodes[0]).Box(),
-			Graph->GetNodeData(SelectedNodes[1]).Box(),
-			Epsilon,
-			&Surface))
-		{
-			FScopedTransaction Trans(TEXT("InteriorEditor"), FText::FromString(TEXT("Add Connection")), Graph);
-			Graph->Modify();
-
-			Graph->AddConnection(SelectedNodes[0], SelectedNodes[1], Surface);
-			Redraw();
-		}
+		TryAddPortal(SelectedNodes[0], SelectedNodes[1]);
 		return true;
 	}
 	else if(Event == EInputEvent::IE_Pressed
@@ -363,7 +391,7 @@ bool FInteriorEditorMode::InputDelta(
 		if(InViewportClient->GetWidgetMode() == FWidget::EWidgetMode::WM_Translate
 			&& IsExclusiveSelection(ESelection::Node))
 		{
-			TranslateNodes(SelectedNodes, InDrag);
+			TranslateNodes(SelectedNodes, InDrag, true);
 		}
 		else if(InViewportClient->GetWidgetMode() == FWidget::EWidgetMode::WM_Translate
 			&& IsExclusiveSelection(ESelection::Face))
@@ -375,7 +403,7 @@ bool FInteriorEditorMode::InputDelta(
 			for(auto const& F : SelectedFaces)	// TODO: Either enforce single selection for faces, or check here 
 				// that we are not moving the same node multiple times
 			{
-				bAltered = bAltered || TranslateFace(F, InDrag[F.FaceId.Axis], false);
+				bAltered = bAltered || TranslateFace(F, InDrag[F.FaceId.Axis], true, false);
 			}
 
 			if(bAltered)
@@ -390,12 +418,12 @@ bool FInteriorEditorMode::InputDelta(
 		else if(InViewportClient->GetWidgetMode() == FWidget::EWidgetMode::WM_Translate
 			&& IsExclusiveSelection(ESelection::Portal))
 		{
-			TranslatePortal(SelectedPortals[0], InDrag, true);
+			TranslatePortal(SelectedPortals[0], InDrag, true, true);
 		}
 		else if(InViewportClient->GetWidgetMode() == FWidget::EWidgetMode::WM_Scale
 			&& IsExclusiveSelection(ESelection::Portal))
 		{
-			ResizePortal(SelectedPortals[0], InScale, true);
+			ResizePortal(SelectedPortals[0], InScale, true, true);
 		}
 	}
 
@@ -486,6 +514,13 @@ void FInteriorEditorMode::DrawHUD(
 		FColor::White
 	};
 	ti.Draw(Canvas);
+}
+
+void FInteriorEditorMode::PostUndo()
+{
+	FEdMode::PostUndo();
+
+	RegenerateSelectionProxies();
 }
 
 /*
@@ -664,7 +699,20 @@ float FInteriorEditorMode::DetermineNextSnapOffset(NodeList const& nodes, NodeLi
 	return DetermineNextSnapOffset(std::move(node_values), std::move(ref_values), axis, direction);
 }
 
-void FInteriorEditorMode::TranslateNodes(NodeList const& nodes, FVector const& offset)
+void FInteriorEditorMode::SetNodeMinMax(NodeIdType NId, FVector const& Min, FVector const& Max)
+{
+	FScopedTransaction Trans(TEXT("InteriorEditor"), FText::FromString(TEXT("Reposition Node")), Graph);
+	Graph->Modify();
+
+	auto Nd = Graph->GetNodeData(NId);
+	Nd.Min = Min;
+	Nd.Max = Max;
+	Graph->SetNodeData(NId, std::move(Nd));
+
+	Redraw();
+}
+
+void FInteriorEditorMode::TranslateNodes(NodeList const& nodes, FVector const& offset, bool bUpdateProxy)
 {
 	if(nodes.Num() == 0)
 	{
@@ -679,6 +727,13 @@ void FInteriorEditorMode::TranslateNodes(NodeList const& nodes, FVector const& o
 		auto Nd = Graph->GetNodeData(NId);
 		Nd.Offset(offset);
 		Graph->SetNodeData(NId, std::move(Nd));
+
+		if(bUpdateProxy)
+		{
+			// By updating only these, we are making the assumption that this method is only called when we
+			// have a node-type selection...
+			UpdateSelectionProxyFromNode(NId);
+		}
 	}
 
 	Redraw();
@@ -691,11 +746,11 @@ void FInteriorEditorMode::SnapNodes(NodeList const& nodes, NodeList const& ref_n
 	{
 		FVector vec = FVector::ZeroVector;
 		vec[axis] = offset * DirectionMultiplier(direction);
-		TranslateNodes(nodes, vec);
+		TranslateNodes(nodes, vec, true);
 	}
 }
 
-bool FInteriorEditorMode::TranslateFace(FNodeFaceRef const& face, float offset, bool bUpdate)
+bool FInteriorEditorMode::TranslateFace(FNodeFaceRef const& face, float offset, bool bUpdateProxy, bool bRedraw)
 {
 	auto ND = Graph->GetNodeData(face.NId);
 	if(face.FaceId.Dir == EAxisDirection::Negative)
@@ -711,7 +766,12 @@ bool FInteriorEditorMode::TranslateFace(FNodeFaceRef const& face, float offset, 
 
 		Graph->SetNodeData(face.NId, std::move(ND));
 
-		if(bUpdate)
+		if(bUpdateProxy)
+		{
+			UpdateSelectionProxyFromNodeFace(face);
+		}
+
+		if(bRedraw)
 		{
 			Redraw();
 		}
@@ -733,11 +793,11 @@ void FInteriorEditorMode::SnapSingleFace(FNodeFaceRef const& face, NodeList cons
 	auto offset = DetermineNextSnapOffset(std::move(face_vals), std::move(ref_vals), face.FaceId.Axis, direction);
 	if(offset != 0.f)
 	{
-		TranslateFace(face, offset * DirectionMultiplier(direction), true);
+		TranslateFace(face, offset * DirectionMultiplier(direction), true, true);
 	}
 }
 
-bool FInteriorEditorMode::TranslatePortal(ConnectionIdType CId, FVector const& offset, bool bUpdate)
+bool FInteriorEditorMode::TranslatePortal(ConnectionIdType CId, FVector const& offset, bool bUpdateProxy, bool bRedraw)
 {
 	auto CD = Graph->GetConnectionData(CId);
 	auto const& N1 = Graph->GetNodeData(CD.Src);
@@ -768,7 +828,12 @@ bool FInteriorEditorMode::TranslatePortal(ConnectionIdType CId, FVector const& o
 
 		Graph->SetConnectionData(CId, std::move(CD));
 
-		if(bUpdate)
+		if(bUpdateProxy)
+		{
+			UpdateSelectionProxyFromPortal(CId);
+		}
+
+		if(bRedraw)
 		{
 			Redraw();
 		}
@@ -779,7 +844,7 @@ bool FInteriorEditorMode::TranslatePortal(ConnectionIdType CId, FVector const& o
 	return false;
 }
 
-bool FInteriorEditorMode::ResizePortal(ConnectionIdType CId, FVector const& scale, bool bUpdate)
+bool FInteriorEditorMode::ResizePortal(ConnectionIdType CId, FVector const& scale, bool bUpdateProxy, bool bRedraw)
 {
 	auto CD = Graph->GetConnectionData(CId);
 	auto const& N1 = Graph->GetNodeData(CD.Src);
@@ -812,7 +877,12 @@ bool FInteriorEditorMode::ResizePortal(ConnectionIdType CId, FVector const& scal
 
 		Graph->SetConnectionData(CId, std::move(CD));
 
-		if(bUpdate)
+		if(bUpdateProxy)
+		{
+			UpdateSelectionProxyFromPortal(CId);
+		}
+
+		if(bRedraw)
 		{
 			Redraw();
 		}
@@ -862,13 +932,38 @@ void FInteriorEditorMode::SnapSinglePortal(ConnectionIdType CId, EAxisIndex axis
 	{
 		auto Offset = FVector::ZeroVector;
 		Offset[axis] = Delta;
-		ensure(TranslatePortal(CId, Offset, true));
+		ensure(TranslatePortal(CId, Offset, true, true));
+	}
+}
+
+bool FInteriorEditorMode::TryAddPortal(NodeIdType N1, NodeIdType N2)
+{
+	FAxisAlignedPlanarArea Surface;
+	if(TestForSharedSurface(
+		Graph->GetNodeData(N1).Box(),
+		Graph->GetNodeData(N2).Box(),
+		Epsilon,
+		&Surface))
+	{
+		FScopedTransaction Trans(TEXT("InteriorEditor"), FText::FromString(TEXT("Add Connection")), Graph);
+		Graph->Modify();
+
+		Graph->AddConnection(N1, N2, Surface);
+		Redraw();
+		return true;
+	}
+	else
+	{
+		return false;
 	}
 }
 
 void FInteriorEditorMode::Redraw() const
 {
-	Graph->GetRootComponent()->MarkRenderStateDirty();
+	if(Graph)
+	{
+		Graph->GetRootComponent()->MarkRenderStateDirty();
+	}
 }
 
 bool FInteriorEditorMode::IsNodeSelection() const
@@ -988,16 +1083,35 @@ void FInteriorEditorMode::Select(HHitProxy* HP)
 	{
 		auto FaceHP = static_cast< HInteriorNodeFaceHitProxy* >(HP);
 		SelectedFaces.Add(FNodeFaceRef{ FaceHP->Node, FaceHP->Face });
+
+		auto SelPrxy = NewObject< UInteriorFaceSelectionProxy >();
+		auto Face = FNodeFaceRef{ FaceHP->Node, FaceHP->Face };
+		SelPrxy->SetFace(Face);
+		FaceSelectionProxies.Add(SelPrxy);
+		UpdateSelectionProxyFromNodeFace(Face);
+		GEditor->NoteSelectionChange();
 	}
 	else if(HP->IsA(HInteriorPortalHitProxy::StaticGetType()))
 	{
 		auto PortalHP = static_cast< HInteriorPortalHitProxy* >(HP);
 		SelectedPortals.Add(PortalHP->Conn);
+
+		auto SelPrxy = NewObject< UInteriorPortalSelectionProxy >();
+		SelPrxy->SetPortal(PortalHP->Conn);
+		PortalSelectionProxies.Add(SelPrxy);
+		UpdateSelectionProxyFromPortal(PortalHP->Conn);
+		GEditor->NoteSelectionChange();
 	}
 	else if(HP->IsA(HInteriorNodeHitProxy::StaticGetType()))
 	{
 		auto NodeHP = static_cast< HInteriorNodeHitProxy* >(HP);
 		SelectedNodes.Add(NodeHP->Node);
+		
+		auto SelPrxy = NewObject< UInteriorNodeSelectionProxy >();
+		SelPrxy->SetNode(NodeHP->Node);
+		NodeSelectionProxies.Add(SelPrxy);
+		UpdateSelectionProxyFromNode(NodeHP->Node);
+		GEditor->NoteSelectionChange();
 	}
 }
 
@@ -1007,17 +1121,184 @@ void FInteriorEditorMode::Deselect(HHitProxy* HP)
 	{
 		auto FaceHP = static_cast< HInteriorNodeFaceHitProxy* >(HP);
 		SelectedFaces.Remove(FNodeFaceRef{ FaceHP->Node, FaceHP->Face });
+
+		FaceSelectionProxies.RemoveAll([FaceHP](UInteriorFaceSelectionProxy* Prxy)
+		{
+			return Prxy->IsFace(FNodeFaceRef{ FaceHP->Node, FaceHP->Face });
+		});
+		GEditor->NoteSelectionChange();
 	}
 	else if(HP->IsA(HInteriorPortalHitProxy::StaticGetType()))
 	{
 		auto PortalHP = static_cast< HInteriorPortalHitProxy* >(HP);
 		SelectedPortals.Remove(PortalHP->Conn);
+
+		PortalSelectionProxies.RemoveAll([PortalHP](UInteriorPortalSelectionProxy* Prxy)
+		{
+			return Prxy->IsPortal(PortalHP->Conn);
+		});
+		GEditor->NoteSelectionChange();
 	}
 	else if(HP->IsA(HInteriorNodeHitProxy::StaticGetType()))
 	{
 		auto NodeHP = static_cast< HInteriorNodeHitProxy* >(HP);
 		SelectedNodes.Remove(NodeHP->Node);
+
+		NodeSelectionProxies.RemoveAll([NodeHP](UInteriorNodeSelectionProxy* Prxy)
+		{
+			return Prxy->IsNode(NodeHP->Node);
+		});
+		GEditor->NoteSelectionChange();
 	}
+}
+
+void FInteriorEditorMode::UpdateNodeFromSelectionProxy(const UInteriorNodeSelectionProxy* Prxy)
+{
+	{
+		FScopedTransaction Trans(TEXT("InteriorEditor"), FText::FromString(TEXT("Update Node From SelProxy")), Graph);
+		Graph->Modify();
+
+		auto NId = Prxy->GetNode();
+		auto Nd = Graph->GetNodeData(NId);
+		Nd.Min = Prxy->Minimum;
+		Nd.Max = Prxy->Maximum;
+		Graph->SetNodeData(NId, std::move(Nd));
+		Graph->NodeNames[NId] = Prxy->Name;
+
+		// Reflect changes back since some things on the details will affect others
+		UpdateSelectionProxyFromNode(NId);
+	}
+
+	Redraw();
+}
+
+bool FInteriorEditorMode::UpdateSelectionProxyFromNode(NodeIdType NId)
+{
+	auto ElemPtr = NodeSelectionProxies.FindByPredicate([NId](const UInteriorNodeSelectionProxy* Prxy)
+	{
+		return Prxy->IsNode(NId);
+	});
+	if(!ElemPtr)
+	{
+		return false;
+	}
+
+	auto& Elem = *ElemPtr;
+	Elem->Name = Graph->NodeNames[NId];
+	auto const& ND = Graph->GetNodeData(NId);
+	Elem->Minimum = ND.Min;
+	Elem->Maximum = ND.Max;
+
+	GEditor->NoteSelectionChange();
+	return true;
+}
+
+void FInteriorEditorMode::UpdateNodeFaceFromSelectionProxy(const UInteriorFaceSelectionProxy* Prxy)
+{
+	{
+		FScopedTransaction Trans(TEXT("InteriorEditor"), FText::FromString(TEXT("Update Face From SelProxy")), Graph);
+		Graph->Modify();
+
+		auto Face = Prxy->GetFace();
+		auto Nd = Graph->GetNodeData(Face.NId);
+		Nd.SetFaceAxisValue(Face.FaceId, Prxy->AxisValue);
+		Graph->SetNodeData(Face.NId, std::move(Nd));
+
+		// Reflect changes back since some things on the details will affect others
+		UpdateSelectionProxyFromNodeFace(Face);
+	}
+
+	Redraw();
+}
+
+bool FInteriorEditorMode::UpdateSelectionProxyFromNodeFace(FNodeFaceRef Face)
+{
+	auto ElemPtr = FaceSelectionProxies.FindByPredicate([Face](const UInteriorFaceSelectionProxy* Prxy)
+	{
+		return Prxy->IsFace(Face);
+	});
+	if(!ElemPtr)
+	{
+		return false;
+	}
+
+	auto& Elem = *ElemPtr;
+	auto const& ND = Graph->GetNodeData(Face.NId);
+	Elem->AxisValue = ND.FaceAxisValue(Face.FaceId.Axis, Face.FaceId.Dir);
+
+	GEditor->NoteSelectionChange();
+	return true;
+}
+
+void FInteriorEditorMode::UpdatePortalFromSelectionProxy(const UInteriorPortalSelectionProxy* Prxy)
+{
+	{
+		FScopedTransaction Trans(TEXT("InteriorEditor"), FText::FromString(TEXT("Update Portal From SelProxy")), Graph);
+		Graph->Modify();
+
+		auto CId = Prxy->GetPortal();
+		auto CD = Graph->GetConnectionData(CId);
+		CD.Portal.Min = Prxy->Minimum;
+		CD.Portal.Max = Prxy->Maximum;
+		Graph->SetConnectionData(CId, std::move(CD));
+		Graph->ConnNames[CId] = Prxy->Name;
+
+		// Reflect changes back since some things on the details will affect others
+		UpdateSelectionProxyFromPortal(CId);
+	}
+
+	Redraw();
+}
+
+bool FInteriorEditorMode::UpdateSelectionProxyFromPortal(ConnectionIdType CId)
+{
+	auto ElemPtr = PortalSelectionProxies.FindByPredicate([CId](const UInteriorPortalSelectionProxy* Prxy)
+	{
+		return Prxy->IsPortal(CId);
+	});
+	if(!ElemPtr)
+	{
+		return false;
+	}
+
+	auto& Elem = *ElemPtr;
+	Elem->Name = Graph->ConnNames[CId];
+	auto const& CD = Graph->GetConnectionData(CId);
+	Elem->Minimum = CD.Portal.Min;
+	Elem->Maximum = CD.Portal.Max;
+
+	GEditor->NoteSelectionChange();
+	return true;
+}
+
+void FInteriorEditorMode::RegenerateSelectionProxies()
+{
+	NodeSelectionProxies.Empty();
+	for(auto NId : SelectedNodes)
+	{
+		auto SelPrxy = NewObject< UInteriorNodeSelectionProxy >();
+		SelPrxy->SetNode(NId);
+		NodeSelectionProxies.Add(SelPrxy);
+		UpdateSelectionProxyFromNode(NId);		
+	}
+	FaceSelectionProxies.Empty();
+	for(auto F : SelectedFaces)
+	{
+		auto SelPrxy = NewObject< UInteriorFaceSelectionProxy >();
+		SelPrxy->SetFace(F);
+		FaceSelectionProxies.Add(SelPrxy);
+		UpdateSelectionProxyFromNodeFace(F);
+	}
+	PortalSelectionProxies.Empty();
+	for(auto CId : SelectedPortals)
+	{
+		auto SelPrxy = NewObject< UInteriorPortalSelectionProxy >();
+		SelPrxy->SetPortal(CId);
+		PortalSelectionProxies.Add(SelPrxy);
+		UpdateSelectionProxyFromPortal(CId);
+	}
+
+	GEditor->NoteSelectionChange();
 }
 
 FInteriorEditorMode::NodeList FInteriorEditorMode::GetNodeComplement(NodeList const& Nodes) const
@@ -1048,21 +1329,25 @@ void FInteriorEditorMode::ClearSelection(SelectionType ST)
 	if(ST & ESelection::Node)
 	{
 		SelectedNodes.Empty();
+		NodeSelectionProxies.Empty();
 		bChanged = true;
 	}
 	if(ST & ESelection::Face)
 	{
 		SelectedFaces.Empty();
+		FaceSelectionProxies.Empty();
 		bChanged = true;
 	}
 	if(ST & ESelection::Portal)
 	{
 		SelectedPortals.Empty();
+		PortalSelectionProxies.Empty();
 		bChanged = true;
 	}
 
 	if(bChanged)
 	{
+		GEditor->NoteSelectionChange();
 		Redraw();
 	}
 }
@@ -1134,4 +1419,42 @@ void FInteriorEditorMode::SnapCameraToWorldAxis(FRotator const& CamRot, EAxisInd
 	axis = (FMath::Abs(axis_world.X) > FMath::Abs(axis_world.Y)) ? EAxisIndex::X : EAxisIndex::Y;
 	direction = AxisDirectionFromValue(axis_world[axis]);
 }
+
+void FInteriorEditorMode::GenerateStaticMesh() const
+{
+	TSharedPtr<SWindow> CreateAssetFromActorWindow =
+		SNew(SWindow)
+		.Title(LOCTEXT("SelectPath", "Select Path"))
+		.ToolTipText(LOCTEXT("SelectPathTooltip", "Select the path where the static mesh will be created"))
+		.ClientSize(FVector2D(400, 400));
+
+	TSharedPtr<SCreateAssetFromObject> CreateAssetFromActorWidget;
+	CreateAssetFromActorWindow->SetContent
+		(
+		SAssignNew(CreateAssetFromActorWidget, SCreateAssetFromObject, CreateAssetFromActorWindow)
+		.AssetFilenameSuffix(TEXT("StaticMesh"))
+		.HeadingText(LOCTEXT("ConvertGraphToStaticMesh_Heading", "Static Mesh Name:"))
+		.CreateButtonText(LOCTEXT("ConvertGraphToStaticMesh_ButtonLabel", "Create Static Mesh"))
+		.OnCreateAssetAction(FOnPathChosen::CreateRaw(this, &FInteriorEditorMode::OnGenerateNamedStaticMesh))
+		);
+
+	TSharedPtr<SWindow> RootWindow = FGlobalTabmanager::Get()->GetRootWindow();
+	if(RootWindow.IsValid())
+	{
+		FSlateApplication::Get().AddWindowAsNativeChild(CreateAssetFromActorWindow.ToSharedRef(), RootWindow.ToSharedRef());
+	}
+	else
+	{
+		FSlateApplication::Get().AddWindow(CreateAssetFromActorWindow.ToSharedRef());
+	}
+}
+
+void FInteriorEditorMode::OnGenerateNamedStaticMesh(FString const& PkgName) const
+{
+	ConvertInteriorGraphToSMAsset(Graph, PkgName);
+}
+
+
+#undef LOCTEXT_NAMESPACE
+
 

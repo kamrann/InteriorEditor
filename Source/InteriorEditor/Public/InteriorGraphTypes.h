@@ -2,14 +2,7 @@
 
 #pragma once
 
-#include "InteriorEditorUtil.h"
-
-
-typedef int32 NodeIdType;
-typedef int32 ConnectionIdType;
-
-static const NodeIdType NullNode = -1;
-static const ConnectionIdType NullConnection = -1;
+#include "InteriorEditorNodeFace.h"
 
 
 struct FNodeData
@@ -80,6 +73,19 @@ struct FNodeData
 		Max += Off;
 	}
 
+	inline void SetFaceAxisValue(FFaceId Face, float Value)
+	{
+		switch(Face.Dir)
+		{
+			case EAxisDirection::Positive:
+			Max[Face.Axis] = Value;
+			break;
+			case EAxisDirection::Negative:
+			Min[Face.Axis] = Value;
+			break;
+		}
+	}
+
 	inline void Extend(EAxisIndex Axis, EAxisDirection Dir, float Delta)
 	{
 		auto Offset = FVector::ZeroVector;
@@ -94,6 +100,15 @@ struct FNodeData
 			Min[Axis] -= Delta;
 			break;
 		}
+	}
+
+	inline bool ContainsPoint(FVector const& Pnt) const
+	{
+		return
+			Pnt.X >= Min.X && Pnt.X < Max.X &&
+			Pnt.Y >= Min.Y && Pnt.Y < Max.Y &&
+			Pnt.Z >= Min.Z && Pnt.Z < Max.Z
+			;
 	}
 };
 

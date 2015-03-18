@@ -26,8 +26,9 @@ public:
 	virtual void RegisterCommands() override;
 
 public:
-	// Mode Switch
-	TSharedPtr< FUICommandInfo > TestCommand;
+	TSharedPtr< FUICommandInfo > DefaultMode;
+
+	TSharedPtr< FUICommandInfo > GenMesh;
 
 	// Tools
 //	TSharedPtr< FUICommandInfo > NewLandscape;

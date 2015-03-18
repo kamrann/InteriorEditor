@@ -6,6 +6,7 @@
 #include "InteriorEditorCommands.h"
 //#include "AssetThumbnail.h"
 #include "InteriorEditorModeSettings.h"
+#include "InteriorGraphActor.h"
 #include "IDetailsView.h"
 #include "PropertyEditorModule.h"
 
@@ -67,16 +68,18 @@ void SInteriorEditor::Construct(const FArguments& InArgs, TSharedRef<FInteriorTo
 	CommandList = InParentToolkit->GetToolkitCommands();
 
 	// Modes:
-	CommandList->MapAction(
-		FInteriorEditorCommands::Get().TestCommand,
-		FUIAction(FExecuteAction::CreateSP(this, &SInteriorEditor::OnTestCommand, FName("The Test Command")))
+/*	CommandList->MapAction(
+		FInteriorEditorCommands::Get().GenMesh,
+		FUIAction(FExecuteAction::CreateSP(this, &SInteriorEditor::OnGenerateMesh))
 		);
+		*/
 /*	CommandList->MapAction(FInteriorEditorCommands::Get().SculptMode, FUIAction(FExecuteAction::CreateSP(this, &SInteriorEditor::OnChangeMode, FName("ToolMode_Sculpt")), FCanExecuteAction::CreateSP(this, &SInteriorEditor::IsModeEnabled, FName(TEXT("ToolMode_Sculpt"))), FIsActionChecked::CreateSP(this, &SInteriorEditor::IsModeActive, FName(TEXT("ToolMode_Sculpt")))));
 	CommandList->MapAction(FInteriorEditorCommands::Get().PaintMode,  FUIAction(FExecuteAction::CreateSP(this, &SInteriorEditor::OnChangeMode, FName("ToolMode_Paint" )), FCanExecuteAction::CreateSP(this, &SInteriorEditor::IsModeEnabled, FName(TEXT("ToolMode_Paint" ))), FIsActionChecked::CreateSP(this, &SInteriorEditor::IsModeActive, FName(TEXT("ToolMode_Paint" )))));
 	*/
 	FToolBarBuilder ModeSwitchButtons(CommandList, FMultiBoxCustomization::None);
 	{
-		ModeSwitchButtons.AddToolBarButton(FInteriorEditorCommands::Get().TestCommand, NAME_None, LOCTEXT("Mode.Test", "Test"), LOCTEXT("Mode.Test.Tooltip", "This is a test button"));
+		ModeSwitchButtons.AddToolBarButton(FInteriorEditorCommands::Get().DefaultMode, NAME_None, LOCTEXT("Mode.Default", "Default Mode"), LOCTEXT("Mode.Default.Tooltip", "Default Interior Editing Mode"));
+		//LOCTEXT("Mode.Default.Tooltip", "Generate a static mesh from the graph")
 //		ModeSwitchButtons.AddToolBarButton(FInteriorEditorCommands::Get().SculptMode, NAME_None, LOCTEXT("Mode.Sculpt", "Sculpt"), LOCTEXT("Mode.Sculpt.Tooltip", "Contains tools that modify the shape of a Interior"));
 //		ModeSwitchButtons.AddToolBarButton(FInteriorEditorCommands::Get().PaintMode,  NAME_None, LOCTEXT("Mode.Paint",  "Paint"),  LOCTEXT("Mode.Paint.Tooltip",  "Contains tools that paint materials on to a Interior"));
 	}
@@ -92,7 +95,6 @@ void SInteriorEditor::Construct(const FArguments& InArgs, TSharedRef<FInteriorTo
 	{
 		DetailsPanel->SetObject(Mode->Settings);
 	}
-
 
 	ChildSlot
 	[
@@ -128,6 +130,30 @@ void SInteriorEditor::Construct(const FArguments& InArgs, TSharedRef<FInteriorTo
 			.Padding(0)
 			[
 				DetailsPanel.ToSharedRef()
+			]
+			+ SVerticalBox::Slot()
+			.Padding(0)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SButton)
+					.Text(FString("Generate Static Mesh"))
+					.OnClicked_Raw(this, &SInteriorEditor::OnGenerateMesh)
+				]
+			]
+			+ SVerticalBox::Slot()
+			.Padding(0)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SButton)
+					.Text(FString("Test"))
+					.OnClicked_Raw(this, &SInteriorEditor::OnTestClicked)
+				]
 			]
 		]
 	];
@@ -233,14 +259,29 @@ bool SInteriorEditor::GetIsPropertyVisible(const FPropertyAndParent& PropertyAnd
 	return false;
 }
 
-void SInteriorEditor::OnTestCommand(FName ModeName)
+/*void*/ FReply SInteriorEditor::OnGenerateMesh()
 {
 	auto Mode = GetEditorMode();
 	if(Mode)
 	{
-		//Mode->SetCurrentToolMode(ModeName);
-		UE_LOG(LogTemp, Log, TEXT("Test Command: %s"), *ModeName.ToString());
+		Mode->GenerateStaticMesh();
 	}
+
+	return FReply::Handled();
+}
+
+FReply SInteriorEditor::OnTestClicked()
+{
+	auto Mode = GetEditorMode();
+	if(Mode)
+	{
+		if(Mode->Graph)
+		{
+			GEditor->SelectActor(Mode->Graph, true, true, true);
+		}
+	}
+
+	return FReply::Handled();
 }
 
 /*

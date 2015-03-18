@@ -4,6 +4,7 @@
 #include "InteriorEditor.h"
 #include "InteriorEditorMode.h"
 #include "InteriorEditorCommands.h"
+#include "GraphDetailsCustomization.h"
 #include "IDetailsView.h"
 #include "PropertyEditorModule.h"
 
@@ -20,6 +21,17 @@ void FInteriorEditorModule::StartupModule()
 		FSlateIcon{},
 		true
 		);
+
+	// Register detail customizations
+	{
+		auto& PropertyModule = FModuleManager::LoadModuleChecked< FPropertyEditorModule >("PropertyEditor");
+		PropertyModule.RegisterCustomClassLayout(
+			"InteriorGraphActor",
+			FOnGetDetailCustomizationInstance::CreateStatic(&FInteriorGraphDetailsCustomization::MakeInstance)
+			);
+
+		PropertyModule.NotifyCustomizationModuleChanged();
+	}
 }
 
 void FInteriorEditorModule::ShutdownModule()

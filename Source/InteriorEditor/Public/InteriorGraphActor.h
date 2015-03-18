@@ -12,8 +12,6 @@
 
 struct FConnectionKey
 {
-//	class AInteriorNodeActor* N1;
-//	class AInteriorNodeActor* N2;
 	NodeIdType Src;
 	NodeIdType Dest;
 
@@ -59,18 +57,12 @@ struct FConnKeyFuncs: BaseKeyFuncs< class AInteriorConnectionActor*, FConnection
 /*
 Actor representing the interior graph.
 */
-UCLASS()
+UCLASS(HideCategories = (Transform, Rendering, Input, Actor))
 class INTERIOREDITOR_API AInteriorGraphActor: public AActor
 {
 	GENERATED_BODY()
 
 public:
-//	UPROPERTY()
-//	TArray< class AInteriorNodeActor* > Nodes;
-
-//	UPROPERTY()
-//	TArray< class AInteriorConnectionActor* > Connections;
-
 	/*
 	When a level is being played, ***IdType is considered to be an index into these arrays.
 	*/
@@ -80,20 +72,10 @@ public:
 	//UPROPERTY()
 	TArray< FConnectionData > ConnData;
 
-	// TODO: TSet not serializable. Will this come in future?
-//	TSet< class AInteriorConnectionActor*, FConnKeyFuncs > Connections;
-
-	// Temp
-	UPROPERTY(EditAnywhere)
-	UMaterial* Mat;
-
 public:
 	AInteriorGraphActor();
 
 public:
-	typedef TArray< NodeIdType > NodeIdList;
-	typedef TArray< ConnectionIdType > ConnectionIdList;
-
 	/*
 	Interface to the graph for when in-game
 	*/
@@ -111,6 +93,7 @@ public:
 	ConnectionIdList GetNodeOutConnections(NodeIdType id) const;
 	ConnectionIdList GetNodeInConnections(NodeIdType id) const;
 	ConnectionIdList GetAllNodeConnections(NodeIdType id) const;
+	ConnectionIdList GetConnectionsOnFace(NodeIdType NId, struct FFaceId const& Face) const;
 
 public:
 	/*
@@ -119,38 +102,40 @@ public:
 	NodeIdType AddNode(FVector const& Min, FVector const& Max);
 	ConnectionIdType AddConnection(NodeIdType N1, NodeIdType N2, struct FAxisAlignedPlanarArea const& area);
 	bool RemoveNode(NodeIdType Id);
+	bool RemoveConnection(ConnectionIdType Id);
 	int RemoveConnections(NodeIdType N1, NodeIdType N2);
-//	bool ToggleConnection(class AInteriorNodeActor* N1, class AInteriorNodeActor* N2);
 
 	void SetNodeData(NodeIdType id, FNodeData&& ND);
 	void SetConnectionData(ConnectionIdType id, FConnectionData&& CD);
 
-
-//	void GatherNodes();
-	bool BuildGraph(int32 Subdivision = 1, int32 SubdivisionZ = 1);
+	TSharedPtr< class FInteriorGraphInstance > BuildGraph(int32 Subdivision = 1, int32 SubdivisionZ = 1);
 
 private:
-	bool RemoveConnection(ConnectionIdType Id);
 	ConnectionIdType FindFirstConnection(FConnectionKey const& Key) const;
 	ConnectionIdType CreateConnection(NodeIdType N1, NodeIdType N2, FAxisAlignedPlanarArea const& area);
-	void GetPackedData(TArray< FNodeData >& PackedNodes, TArray< FConnectionData >& PackedConnections) const;
+	void GetPackedData(
+		TArray< FNodeData >& PackedNodes,
+		TArray< FConnectionData >& PackedConnections,
+		TArray< FString >& NodeNameAr,
+		TArray< FString >& ConnNameAr
+		) const;
 
 /*	inline NodeIdType GetNodeId(const FNodeData* nd) const
 	{
 		return nd - NodeData.GetData();
 	}
 */
-	inline bool PointInNode(FVector const& pos, FNodeData const& nd) const
-	{
-		return
-			pos.X >= nd.Min.X && pos.X < nd.Max.X &&
-			pos.Y >= nd.Min.Y && pos.Y < nd.Max.Y &&
-			pos.Z >= nd.Min.Z && pos.Z < nd.Max.Z
-			;
-	}
 
-	void RemoveHiddenNodes(TMap< NodeIdType, FNodeData >& BuildND, TMap< ConnectionIdType, FConnectionData >& BuildCD);
-	void PackNodeAndConnectionData(TMap< NodeIdType, FNodeData >& BuildND, TMap< ConnectionIdType, FConnectionData >& BuildCD);
+	static void RemoveHiddenNodes(
+		TMap< NodeIdType, FNodeData >& BuildND,
+		TMap< ConnectionIdType, FConnectionData >& BuildCD,
+		UWorld* World
+		);
+	static void PackNodeAndConnectionData(
+		TSharedPtr< FInteriorGraphInstance > Inst,
+		TMap< NodeIdType, FNodeData >& BuildND,
+		TMap< ConnectionIdType, FConnectionData >& BuildCD
+		);
 
 public:
 	// Overrides

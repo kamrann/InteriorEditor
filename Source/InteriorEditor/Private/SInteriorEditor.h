@@ -53,7 +53,8 @@ protected:
 //	bool GetLandscapeEditorIsEnabled() const;
 	bool GetIsPropertyVisible(const struct FPropertyAndParent& PropertyAndParent) const;
 
-	void OnTestCommand(FName ModeName);
+	/*void*/ FReply OnGenerateMesh();// FName ModeName);
+	FReply OnTestClicked();
 //	void OnChangeMode(FName ModeName);
 //	bool IsModeEnabled(FName ModeName) const;
 //	bool IsModeActive(FName ModeName) const;

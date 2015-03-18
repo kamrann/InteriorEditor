@@ -19,6 +19,8 @@ IMPLEMENT_HIT_PROXY(HInteriorPortalHitProxy, HInteriorHitProxy)
 const float NodeFaceOffset = 0.4f;
 const float PortalOffset = 0.5f;
 
+const float LineDepthBias = 1.0e-4f;
+
 
 enum class ENodeRenderMode {
 	Normal,
@@ -75,7 +77,7 @@ protected:
 		FMeshElementCollector& Collector,
 		int32 ViewIndex,
 		FConnInfo const& Cn,
-//		ENodeRenderMode Mode,
+		ENodeRenderMode Mode,
 		bool bWireframe) const;
 
 protected:
@@ -84,9 +86,9 @@ protected:
 	TArray< FNodeInfo > NodeInfo;
 	TArray< FConnInfo > ConnInfo;
 
-	AInteriorGraphActor::NodeIdList SelectedNodes;
+	NodeIdList SelectedNodes;
 	TArray< FNodeFaceRef > SelectedFaces;
-	AInteriorGraphActor::ConnectionIdList SelectedPortals;
+	ConnectionIdList SelectedPortals;
 };
 
 
@@ -125,14 +127,15 @@ FGraphSceneProxy::FGraphSceneProxy(
 			ConnInfo.Add(std::move(CI));
 		}
 
-		Mat = Graph->Mat;
+		//Mat = Graph->Mat;
+		Mat = UMaterial::GetDefaultMaterial(EMaterialDomain::MD_Surface);
 
 		if(GLevelEditorModeTools().IsModeActive(FInteriorEditorMode::ModeId))
 		{
 			auto EdMode = (FInteriorEditorMode*)GLevelEditorModeTools().GetActiveMode(FInteriorEditorMode::ModeId);
 			SelectedNodes = EdMode->SelectedNodes;
 			SelectedFaces = EdMode->SelectedFaces;
-			//SelectedPortals = EdMode->SelectedPortals;
+			SelectedPortals = EdMode->SelectedPortals;
 		}
 	}
 }
@@ -190,16 +193,25 @@ void FGraphSceneProxy::AddNodeFace(
 	Planar2[FAxisUtils::OtherAxes[Face.Axis][1]] = NdExtent[FAxisUtils::OtherAxes[Face.Axis][1]] * 0.5f - NodeFaceOffset;
 	auto Base = NdCenter + Norm;
 
+	auto HitPrxy = new HInteriorNodeFaceHitProxy(NId, Face.Axis, Face.Dir);
+
 	auto const EdgeProp = 0.9f;
 	auto const InnerProp = 0.2f;
 
-	V.Position = Base - Planar1 - Planar2;
+	FVector const OuterQuadVerts[4] = {
+		Base - Planar1 - Planar2,
+		Base - Planar1 + Planar2,
+		Base + Planar1 + Planar2,
+		Base + Planar1 - Planar2,
+	};
+
+	V.Position = OuterQuadVerts[0];
 	Mesh.AddVertex(V);
-	V.Position = Base - Planar1 + Planar2;
+	V.Position = OuterQuadVerts[1];
 	Mesh.AddVertex(V);
-	V.Position = Base + Planar1 + Planar2;
+	V.Position = OuterQuadVerts[2];
 	Mesh.AddVertex(V);
-	V.Position = Base + Planar1 - Planar2;
+	V.Position = OuterQuadVerts[3];
 	Mesh.AddVertex(V);
 
 	V.Position = Base + (-Planar1 - Planar2) * EdgeProp;
@@ -211,13 +223,20 @@ void FGraphSceneProxy::AddNodeFace(
 	V.Position = Base + (Planar1 - Planar2) * EdgeProp;
 	Mesh.AddVertex(V);
 
-	V.Position = Base + (-Planar1 - Planar2) * InnerProp;
+	FVector const CenterQuadVerts[4] = {
+		Base + (-Planar1 - Planar2) * InnerProp,
+		Base + (-Planar1 + Planar2) * InnerProp,
+		Base + (Planar1 + Planar2) * InnerProp,
+		Base + (Planar1 - Planar2) * InnerProp,
+	};
+
+	V.Position = CenterQuadVerts[0];
 	Mesh.AddVertex(V);
-	V.Position = Base + (-Planar1 + Planar2) * InnerProp;
+	V.Position = CenterQuadVerts[1];
 	Mesh.AddVertex(V);
-	V.Position = Base + (Planar1 + Planar2) * InnerProp;
+	V.Position = CenterQuadVerts[2];
 	Mesh.AddVertex(V);
-	V.Position = Base + (Planar1 - Planar2) * InnerProp;
+	V.Position = CenterQuadVerts[3];
 	Mesh.AddVertex(V);
 
 	Mesh.AddTriangle(0, 5, 1);
@@ -232,6 +251,24 @@ void FGraphSceneProxy::AddNodeFace(
 	Mesh.AddTriangle(8, 10, 9);
 	Mesh.AddTriangle(8, 11, 10);
 
+	if(Mode == ENodeRenderMode::Selected)
+	{
+		auto PDI = Collector.GetPDI(ViewIndex);
+		PDI->SetHitProxy(HitPrxy);
+
+		PDI->DrawLine(OuterQuadVerts[0], OuterQuadVerts[1], FColor::Yellow, SDPG_World, 0.0f, LineDepthBias);
+		PDI->DrawLine(OuterQuadVerts[1], OuterQuadVerts[2], FColor::Yellow, SDPG_World, 0.0f, LineDepthBias);
+		PDI->DrawLine(OuterQuadVerts[2], OuterQuadVerts[3], FColor::Yellow, SDPG_World, 0.0f, LineDepthBias);
+		PDI->DrawLine(OuterQuadVerts[3], OuterQuadVerts[0], FColor::Yellow, SDPG_World, 0.0f, LineDepthBias);
+
+		PDI->DrawLine(CenterQuadVerts[0], CenterQuadVerts[1], FColor::Yellow, SDPG_World, 0.0f, LineDepthBias);
+		PDI->DrawLine(CenterQuadVerts[1], CenterQuadVerts[2], FColor::Yellow, SDPG_World, 0.0f, LineDepthBias);
+		PDI->DrawLine(CenterQuadVerts[2], CenterQuadVerts[3], FColor::Yellow, SDPG_World, 0.0f, LineDepthBias);
+		PDI->DrawLine(CenterQuadVerts[3], CenterQuadVerts[0], FColor::Yellow, SDPG_World, 0.0f, LineDepthBias);
+
+		PDI->SetHitProxy(nullptr);
+	}
+
 	auto Material = bWireframe ? (UMaterialInterface*)GEngine->WireframeMaterial :
 		(Mat ? Mat : (UMaterialInterface*)GEngine->ArrowMaterial);
 	auto MatProxy = new FColoredMaterialRenderProxy{
@@ -241,8 +278,7 @@ void FGraphSceneProxy::AddNodeFace(
 
 	Collector.RegisterOneFrameMaterialProxy(MatProxy);
 
-	Mesh.GetMesh(FMatrix::Identity, MatProxy, SDPG_World, true, false, false, ViewIndex, Collector,
-		new HInteriorNodeFaceHitProxy(NId, Face.Axis, Face.Dir));
+	Mesh.GetMesh(FMatrix::Identity, MatProxy, SDPG_World, true, false, false, ViewIndex, Collector, HitPrxy);
 }
 
 void FGraphSceneProxy::AddNode(
@@ -257,6 +293,8 @@ void FGraphSceneProxy::AddNode(
 	FDynamicMeshBuilder Mesh;
 	FDynamicMeshVertex V;
 	V.Color = FColor::White;
+
+	auto HitPrxy = new HInteriorNodeHitProxy(NId);
 
 	auto BaseIdx = 0;
 
@@ -281,18 +319,39 @@ void FGraphSceneProxy::AddNode(
 			auto Planar2 = FVector::ZeroVector;
 			Planar2[FAxisUtils::OtherAxes[Axis][1]] = NdExtent[FAxisUtils::OtherAxes[Axis][1]] * 0.5f * BoxProp;
 			auto Base = NdCenter + Norm;
-						
-			V.Position = Base - Planar1 - Planar2;
+			
+			FVector const QuadVerts[4] = {
+				Base - Planar1 - Planar2,
+				Base - Planar1 + Planar2,
+				Base + Planar1 + Planar2,
+				Base + Planar1 - Planar2,
+			};
+
+			V.Position = QuadVerts[0];
 			Mesh.AddVertex(V);
-			V.Position = Base - Planar1 + Planar2;
+			V.Position = QuadVerts[1];
 			Mesh.AddVertex(V);
-			V.Position = Base + Planar1 + Planar2;
+			V.Position = QuadVerts[2];
 			Mesh.AddVertex(V);
-			V.Position = Base + Planar1 - Planar2;
+			V.Position = QuadVerts[3];
 			Mesh.AddVertex(V);
 
 			Mesh.AddTriangle(BaseIdx + 0, BaseIdx + 2, BaseIdx + 1);
 			Mesh.AddTriangle(BaseIdx + 0, BaseIdx + 3, BaseIdx + 2);
+
+			if(Mode == ENodeRenderMode::Selected)
+			{
+				auto PDI = Collector.GetPDI(ViewIndex);
+				PDI->SetHitProxy(HitPrxy);
+
+				PDI->DrawLine(QuadVerts[0], QuadVerts[1], FColor::Yellow, SDPG_World, 0.0f, LineDepthBias);
+				PDI->DrawLine(QuadVerts[1], QuadVerts[2], FColor::Yellow, SDPG_World, 0.0f, LineDepthBias);
+				PDI->DrawLine(QuadVerts[2], QuadVerts[3], FColor::Yellow, SDPG_World, 0.0f, LineDepthBias);
+				PDI->DrawLine(QuadVerts[3], QuadVerts[0], FColor::Yellow, SDPG_World, 0.0f, LineDepthBias);
+
+				PDI->SetHitProxy(nullptr);
+			}
+
 			BaseIdx += 4;
 		}
 	}
@@ -306,15 +365,14 @@ void FGraphSceneProxy::AddNode(
 
 	Collector.RegisterOneFrameMaterialProxy(MatProxy);
 
-	Mesh.GetMesh(FMatrix::Identity, MatProxy, SDPG_World, true, false, false, ViewIndex, Collector,
-		new HInteriorNodeHitProxy(NId));
+	Mesh.GetMesh(FMatrix::Identity, MatProxy, SDPG_World, true, false, false, ViewIndex, Collector, HitPrxy);
 }
 
 void FGraphSceneProxy::AddPortal(
 	FMeshElementCollector& Collector,
 	int32 ViewIndex,
 	FConnInfo const& Cn,
-//	ENodeRenderMode Mode,
+	ENodeRenderMode Mode,
 	bool bWireframe) const
 {
 	FDynamicMeshBuilder Mesh;
@@ -335,6 +393,8 @@ void FGraphSceneProxy::AddPortal(
 	Planar1[FAxisUtils::OtherAxes[Cn.Axis][0]] = HalfSize[FAxisUtils::OtherAxes[Cn.Axis][0]] - NodeFaceOffset;
 	auto Planar2 = FVector::ZeroVector;
 	Planar2[FAxisUtils::OtherAxes[Cn.Axis][1]] = HalfSize[FAxisUtils::OtherAxes[Cn.Axis][1]] - NodeFaceOffset;
+
+	auto HitPrxy = new HInteriorPortalHitProxy(Cn.Id);
 
 	auto const Directions = { EAxisDirection::Positive, EAxisDirection::Negative };
 	int BaseIdx = 0;
@@ -393,16 +453,21 @@ void FGraphSceneProxy::AddPortal(
 		Mesh.AddTriangle(BaseIdx + 12, BaseIdx + 14, BaseIdx + 15);
 
 		auto PDI = Collector.GetPDI(ViewIndex);
-		PDI->DrawLine(Cnr1, Cnr2, FColor::Green, SDPG_World, 3.0f, 0.5f);
-		PDI->DrawLine(Cnr2, Cnr3, FColor::Green, SDPG_World, 3.0f, 0.5f);
-		PDI->DrawLine(Cnr3, Cnr4, FColor::Green, SDPG_World, 3.0f, 0.5f);
-		PDI->DrawLine(Cnr4, Cnr1, FColor::Green, SDPG_World, 3.0f, 0.5f);
+		PDI->SetHitProxy(HitPrxy);
+		auto Color = Mode == ENodeRenderMode::Selected ? FColor::Yellow : FColor(FLinearColor(0.f, 0.5f, 0.f));
+
+		PDI->DrawLine(Cnr1, Cnr2, Color, SDPG_World, 3.0f, 0.5f);
+		PDI->DrawLine(Cnr2, Cnr3, Color, SDPG_World, 3.0f, 0.5f);
+		PDI->DrawLine(Cnr3, Cnr4, Color, SDPG_World, 3.0f, 0.5f);
+		PDI->DrawLine(Cnr4, Cnr1, Color, SDPG_World, 3.0f, 0.5f);
+
+		PDI->SetHitProxy(nullptr);
 
 		BaseIdx += 16;	// Added vertex count
 	}
 
 	auto Material = bWireframe ? (UMaterialInterface*)GEngine->WireframeMaterial :
-		(Mat ? Mat : (UMaterialInterface*)GEngine->ArrowMaterial);
+		Mat;// (UMaterialInterface*)GEngine->DebugMeshMaterial;
 	auto MatProxy = new FColoredMaterialRenderProxy{
 		Material->GetRenderProxy(false),
 		FColor::Green//ColorFromMode(Mode)
@@ -410,8 +475,7 @@ void FGraphSceneProxy::AddPortal(
 
 	Collector.RegisterOneFrameMaterialProxy(MatProxy);
 
-	Mesh.GetMesh(FMatrix::Identity, MatProxy, SDPG_World, true, false, false, ViewIndex, Collector,
-		new HInteriorPortalHitProxy(Cn.Id));
+	Mesh.GetMesh(FMatrix::Identity, MatProxy, SDPG_World, true, false, false, ViewIndex, Collector, HitPrxy);
 }
 
 FPrimitiveViewRelevance FGraphSceneProxy::GetViewRelevance(const FSceneView* View)
@@ -499,11 +563,12 @@ void FGraphSceneProxy::GetDynamicMeshElements(const TArray<const FSceneView*>& V
 
 				for(auto const& Cn : ConnInfo)
 				{
-//					auto bSel = SelectedNodes.Contains(Nd.Id);
+					auto bSel = SelectedPortals.Contains(Cn.Id);
 					AddPortal(
 						Collector,
 						ViewIndex,
 						Cn,
+						bSel ? ENodeRenderMode::Selected : ENodeRenderMode::Normal,
 						EngineShowFlags.Wireframe);
 				}
 			}

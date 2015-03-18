@@ -2,6 +2,9 @@
 
 #pragma once
 
+#include "Math/Box.h"
+
+
 /*
 TODO: Move some stuff to KantanUtil
 */
@@ -27,7 +30,10 @@ enum class EAxisDirection {
 
 struct FAxisUtils
 {
+	static const EAxisIndex AllAxes[EAxisIndex::Count];
 	static const EAxisIndex OtherAxes[EAxisIndex::Count][2];
+
+	static const EAxisDirection BothDirections[2];
 
 	static inline bool IsBoxWithinBounds(FBox const& Box, EAxisIndex Axis, float Min, float Max)
 	{

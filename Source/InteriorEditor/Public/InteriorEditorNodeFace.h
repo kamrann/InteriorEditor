@@ -2,8 +2,8 @@
 
 #pragma once
 
+#include "InteriorGraphBaseTypes.h"
 #include "InteriorEditorUtil.h"
-#include "InteriorGraphTypes.h"
 
 
 struct FFaceId

@@ -6,8 +6,13 @@
 
 void FInteriorEditorCommands::RegisterCommands()
 {
-	UI_COMMAND(TestCommand, "Mode - Manage", "", EUserInterfaceActionType::RadioButton, FInputGesture());
-	NameToCommandMap.Add("ToolMode_Manage", TestCommand);
+	// TODO: Too many strings! Find out what they're each used for
+
+	UI_COMMAND(DefaultMode, "DefaultMode", "", EUserInterfaceActionType::RadioButton, FInputGesture());
+	NameToCommandMap.Add("DefaultMode", DefaultMode);
+
+	UI_COMMAND(GenMesh, "GenMesh", "", EUserInterfaceActionType::Button, FInputGesture());
+	NameToCommandMap.Add("GenMesh", GenMesh);
 
 //	UI_COMMAND(NewLandscape, "Tool - New Landscape", "", EUserInterfaceActionType::RadioButton, FInputGesture());
 //	NameToCommandMap.Add("Tool_NewLandscape", NewLandscape);

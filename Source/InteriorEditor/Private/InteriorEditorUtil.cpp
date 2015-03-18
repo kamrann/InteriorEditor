@@ -4,11 +4,22 @@
 #include "InteriorEditorUtil.h"
 
 
+const EAxisIndex FAxisUtils::AllAxes[EAxisIndex::Count] = {
+	EAxisIndex::X,
+	EAxisIndex::Y,
+	EAxisIndex::Z,
+};
+
 // Perhaps there is an ideal ordering defined by the handedness of the coordinate system?
 const EAxisIndex FAxisUtils::OtherAxes[EAxisIndex::Count][2] = {
 	{ EAxisIndex::Y, EAxisIndex::Z },
-	{ EAxisIndex::X, EAxisIndex::Z },
+	{ EAxisIndex::Z, EAxisIndex::X },
 	{ EAxisIndex::X, EAxisIndex::Y },
+};
+
+const EAxisDirection FAxisUtils::BothDirections[2] = {
+	EAxisDirection::Positive,
+	EAxisDirection::Negative,
 };
 
 

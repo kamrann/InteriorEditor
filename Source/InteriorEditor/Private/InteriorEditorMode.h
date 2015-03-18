@@ -64,6 +64,11 @@ public:
 		FCanvas* Canvas
 		) override;
 
+	virtual void PostUndo() override;
+
+public:
+	void GenerateStaticMesh() const;
+
 protected:
 	typedef TArray< class AInteriorNodeActor* > FNodeList;
 	typedef TArray< float > FAxisValueList;
@@ -159,6 +164,15 @@ protected:
 	void Select(class HHitProxy* HP);
 	void Deselect(class HHitProxy* HP);
 
+	void UpdateNodeFromSelectionProxy(const class UInteriorNodeSelectionProxy* Prxy);
+	bool UpdateSelectionProxyFromNode(NodeIdType NId);
+	void UpdateNodeFaceFromSelectionProxy(const class UInteriorFaceSelectionProxy* Prxy);
+	bool UpdateSelectionProxyFromNodeFace(FNodeFaceRef F);
+	void UpdatePortalFromSelectionProxy(const class UInteriorPortalSelectionProxy* Prxy);
+	bool UpdateSelectionProxyFromPortal(ConnectionIdType CId);
+
+	void RegenerateSelectionProxies();
+
 	NodeList GetNodeComplement(NodeList const& Nodes) const;
 	NodeList GetNodeComplement(NodeIdType const& Nd) const;
 	FaceList GetSelectionComplement(FaceList const& Sel) const;
@@ -182,20 +196,25 @@ protected:
 	float DetermineNextSnapOffset(FAxisValueList vals, FAxisValueList ref_vals, EAxisIndex axis, EAxisDirection direction) const;
 	float DetermineNextSnapOffset(NodeList const& nodes, NodeList const& ref_nodes, EAxisIndex axis, EAxisDirection direction) const;
 
-	void TranslateNodes(NodeList const& nodes, FVector const& offset);
+	void SetNodeMinMax(NodeIdType NId, FVector const& Min, FVector const& Max);
+	void TranslateNodes(NodeList const& nodes, FVector const& offset, bool bUpdateProxy);
 	void SnapNodes(NodeList const& nodes, NodeList const& ref_nodes, EAxisIndex axis, EAxisDirection direction);
 
-	bool TranslateFace(FNodeFaceRef const& face, float offset, bool bUpdate);
+	bool TranslateFace(FNodeFaceRef const& face, float offset, bool bUpdateProxy, bool bRedraw);
 	void SnapSingleFace(FNodeFaceRef const& face, NodeList const& ref_nodes, EAxisDirection direction);
 
-	bool TranslatePortal(ConnectionIdType CId, FVector const& offset, bool bUpdate);
-	bool ResizePortal(ConnectionIdType CId, FVector const& scale, bool bUpdate);
+	bool TranslatePortal(ConnectionIdType CId, FVector const& offset, bool bUpdateProxy, bool bRedraw);
+	bool ResizePortal(ConnectionIdType CId, FVector const& scale, bool bUpdateProxy, bool bRedraw);
 	/*
 	Snap the portal to the boundary of the shared surface between the two nodes
 	*/
 	void SnapSinglePortal(ConnectionIdType CId, EAxisIndex axis, EAxisDirection direction);
 
+	bool TryAddPortal(NodeIdType N1, NodeIdType N2);
+
 	void Redraw() const;
+
+	void OnGenerateNamedStaticMesh(FString const& PkgName) const;
 
 protected:
 	class AInteriorGraphActor* Graph;
@@ -204,6 +223,10 @@ protected:
 	NodeList SelectedNodes;
 	FaceList SelectedFaces;
 	PortalList SelectedPortals;
+
+	TArray< class UInteriorNodeSelectionProxy* > NodeSelectionProxies;
+	TArray< class UInteriorFaceSelectionProxy* > FaceSelectionProxies;
+	TArray< class UInteriorPortalSelectionProxy* > PortalSelectionProxies;
 
 //	class AInteriorGizmoActor* Gizmo;
 
@@ -214,6 +237,11 @@ public:
 	FVector SnapDelta;
 
 	friend class FGraphSceneProxy;
+	friend class SInteriorEditor;
+	friend class FInteriorGraphDetailsCustomization;
+	friend class UInteriorNodeSelectionProxy;
+	friend class UInteriorFaceSelectionProxy;
+	friend class UInteriorPortalSelectionProxy;
 };
 
 
